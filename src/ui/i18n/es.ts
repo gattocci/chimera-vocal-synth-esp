@@ -89,9 +89,12 @@ export const ES: Record<string, string> = {
     "arrastra entre masculino, femenino y niño; las flechas avanzan a pasos",
 
   // ---------------------------------------------------------------- speak
-  "Say": "Decir",
+  Say: "Decir",
   "Text to speech": "Texto a voz",
   "Text is IPA": "El texto es AFI",
+  English: "Inglés",
+  Spanish: "Español",
+  Dialect: "Dialecto",
   "IPA to speak": "AFI a decir",
   "Text to speak": "Texto a decir",
   "Type IPA, for example ˈhɛloʊ": "Escribe AFI, por ejemplo ˈhɛloʊ",

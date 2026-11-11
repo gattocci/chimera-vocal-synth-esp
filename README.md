@@ -1,5 +1,6 @@
 # CHIMERA
 
+Este es un trabajo de traducción, 
 A physical-modeling voice synthesizer in the browser. Every sound comes from a simulated
 airway (lungs, vocal folds or syrinx, a branched vocal tract, lips, nose), not from samples.
 The engine is Rust, compiled to WebAssembly for an AudioWorklet; the same code runs natively

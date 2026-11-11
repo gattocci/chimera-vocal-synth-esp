@@ -7,6 +7,7 @@
 
 use super::durations::{SegInfo, klatt_durations};
 use super::inventory::{Glottal, Manner, PhonemeDef, Voicing, phoneme};
+use super::syllables::Lang;
 use super::{Intonation, Plan, PlannedSegment, Segment};
 use crate::anatomy::human::{ArticKey, ArticPatch, BodyMix, BodyName};
 use crate::control::score::{ControlKey, Gesture, Targets};
@@ -51,6 +52,14 @@ pub fn expand(ipa: &str) -> Option<&'static [&'static str]> {
         "ɔɪ" => &["ɔ", "ɪ"],
         "eɪ" => &["e", "i"],
         "oʊ" => &["o", "u"],
+        // Spanish falling diphthongs (real offglides [i u], as Spanish requires)
+        "ai" => &["a", "i"],
+        "au" => &["a", "u"],
+        "ei" => &["e", "i"],
+        "oi" => &["o", "i"],
+        "eu" => &["e", "u"],
+        "ou" => &["o", "u"],
+        "ui" => &["u", "i"],
         "ɚ" => &["ɝ"],
         _ => return None,
     })
@@ -138,6 +147,10 @@ pub struct PlanOptions {
     /// fit short notes. Speech and live notes leave it unset.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sung: Option<bool>,
+    /// which language's phonation the utterance follows. English (the default) aspirates
+    /// syllable-initial voiceless stops; Spanish never does.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lang: Option<Lang>,
 }
 
 /// JS truthiness of an optional number (`if (s.f0)`: 0 and NaN are false).
@@ -188,7 +201,7 @@ pub fn plan_utterance(input: &[Segment], o: &PlanOptions) -> Plan {
         }
         let d = phoneme(&s.ipa, body);
         SegInfo { vowel: false, manner: d.map(|d| d.manner), voiced: Some(d.is_some_and(|d| d.voicing == Voicing::Voiced)), dur: d.map(|d| d.dur) }
-    });
+    }, o.lang);
     // expand diphthongs into two vowel targets sharing the duration
     let mut segs: Vec<Seg> = Vec::with_capacity(input.len() + 4);
     for (si, s) in input.iter().enumerate() {
@@ -308,8 +321,9 @@ pub fn plan_utterance(input: &[Segment], o: &PlanOptions) -> Plan {
             gestures.push(Gesture::new(t0, t1, 0.012, 0.015, 8.0, one(ControlKey::CLOSURE, 1.0)).label("ʔ"));
         } else if def.voicing == Voicing::Voiceless {
             if def.manner == Manner::Stop || def.manner == Manner::Affricate {
-                // aspirated when syllable-initial before a vowel and not after /s/ (English-like)
-                let aspirated = next_vowel && !prev_seg.is_some_and(|p| p.ipa == "s");
+                // aspirated when syllable-initial before a vowel and not after /s/ (English-like);
+                // Spanish voiceless stops are never aspirated
+                let aspirated = o.lang != Some(Lang::Spanish) && next_vowel && !prev_seg.is_some_and(|p| p.ipa == "s");
                 let vot = if aspirated { 0.05 / rate } else { 0.012 };
                 gestures.push(Gesture::new(t0 + 0.25 * dur, t1 + vot * 0.4, 0.035, if aspirated { 0.045 } else { 0.02 }, 6.0, one(ControlKey::ABDUCTION, if aspirated { 0.36 } else { 0.22 })).label("aspiration"));
             } else {

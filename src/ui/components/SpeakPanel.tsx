@@ -2,8 +2,9 @@ import { useEffect, useState } from "react";
 import { useStore } from "../store.ts";
 import { speakText, speakPhrases, stopSpeaking, onPlan, currentPlan, spokenWordNow } from "../speech.ts";
 import { mouthWords } from "../mouthWords.ts";
-import { tokenizeIpa } from "../../wasm/engine.ts";
-import { Slider, Toggle } from "./Controls.tsx";
+import { tokenizeIpa, DIALECT_PRESETS, type DialectPreset } from "../../wasm/engine.ts";
+import { setVoiceLang, currentVoiceLang, type VoiceLang } from "../speech.ts";
+import { Slider, Toggle, Segmented } from "./Controls.tsx";
 import { Chip, Screen } from "./Screen.tsx";
 import { ScoreView, planNow } from "./ScoreView.tsx";
 import { TubeView } from "./TubeView.tsx";
@@ -125,7 +126,19 @@ export function SpeakRight() {
   const [busy, setBusy] = useState(false);
   const [trans, setTrans] = useState(currentPlan()?.transcription ?? "");
   const [vowel, setVowel] = useState("ɑ");
+  // the page's voice language (English by default: nothing changes until it is switched)
+  const [lang, setLang] = useState<VoiceLang>(currentVoiceLang());
+  const [dialect, setDialect] = useState<DialectPreset>("neutro");
   useEffect(() => onPlan((p) => setTrans(p?.transcription ?? "")), []);
+
+  const pickLang = (l: VoiceLang) => {
+    setLang(l);
+    setVoiceLang(l, l === "es" ? DIALECT_PRESETS[dialect] : undefined);
+  };
+  const pickDialect = (d: DialectPreset) => {
+    setDialect(d);
+    setVoiceLang("es", DIALECT_PRESETS[d]);
+  };
 
   const speak = async () => {
     setBusy(true);
@@ -143,7 +156,25 @@ export function SpeakRight() {
 
   return (
     <div className="right right-speak">
-      <Screen className="s-say" title={t("Say")} sub={t("Text to speech")} tools={<Toggle label={t("Text is IPA")} checked={ipa} onChange={setIpa} />}>
+      <Screen
+        className="s-say"
+        title={t("Say")}
+        sub={t("Text to speech")}
+        tools={
+          <>
+            <Toggle label={t("Text is IPA")} checked={ipa} onChange={setIpa} />
+            <Segmented
+              label={t("Voice")}
+              value={lang}
+              options={[
+                { value: "en" as const, label: t("English") },
+                { value: "es" as const, label: t("Spanish") },
+              ]}
+              onChange={pickLang}
+            />
+          </>
+        }
+      >
         <div className="say">
           <div className="say-row">
             <textarea
@@ -175,6 +206,15 @@ export function SpeakRight() {
               <Slider label={t("Rate")} value={rate} min={0.5} max={1.8} onChange={setRate} format={(v) => `${v.toFixed(2)}×`} />
             </div>
           </div>
+          {lang === "es" && (
+            <div className="examples" role="group" aria-label={t("Dialect")}>
+              {(Object.keys(DIALECT_PRESETS) as DialectPreset[]).map((d) => (
+                <Chip key={d} on={dialect === d} onClick={() => pickDialect(d)}>
+                  {d === "neutro" ? t("Neutro") : d === "rioplatense" ? t("Rioplatense") : t("Castellano")}
+                </Chip>
+              ))}
+            </div>
+          )}
           <div className="examples" role="group" aria-label={t("Examples")}>
             {EXAMPLES.map((ex) => (
               <Chip

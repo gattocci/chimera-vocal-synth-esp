@@ -83,13 +83,14 @@ export function TubeView() {
     const marks: [number, string][] = [[0, "GLOTTIS"], [phLen, "VELUM"], [f.teethS, "TEETH"], [total, "LIPS"]];
     let lastRight = -Infinity;
     for (const [s, name] of marks) {
+      const shown = t(name); // the translated name is what is drawn; size the clamp with it
       const x = x0 + s * sx;
-      const tw = name.length * 9 * 0.78;
+      const tw = shown.length * 9 * 0.78;
       const lx = Math.min(w - tw - 2, Math.max(2, x - tw / 2));
       if (lx < lastRight + 8) continue;
       lastRight = lx + tw;
       seg(ctx, x, h - 26, x, h - 21, V.blueDim, 1);
-      label(ctx, t(name), lx, h - 9, { size: 9, color: TEXT.secondary, ls: 0.16 });
+      label(ctx, shown, lx, h - 9, { size: 9, color: TEXT.secondary, ls: 0.16 });
     }
   });
   return <canvas ref={ref} className="instrument-canvas" aria-label={t("Area function of the simulated tube, lit by sound pressure")} role="img" />;
