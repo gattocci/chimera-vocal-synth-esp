@@ -34,6 +34,22 @@ pub struct Segment {
     /// word boundary after this segment
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub word_end: Option<bool>,
+    /// a voiceless stop or affricate's aspiration, as its front end decides it (Mandarin and Korean
+    /// contrast it); None: the planner's default, English's rule (aspirated syllable-initially
+    /// before a vowel, not after /s/)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub aspirated: Option<bool>,
+    /// a vowel said with the velum lowered (IPA combining tilde); None or false: oral
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub nasalized: Option<bool>,
+    /// a consonant made with a second, palatal gesture: the tongue body raised and fronted toward
+    /// the palate (IPA ʲ); None or false: plain
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub palatalized: Option<bool>,
+    /// breathy voice: a voiced stop or affricate released with the folds apart (IPA ʱ), or a
+    /// vowel said with them part-open (IPA combining diaeresis below); None or false: modal
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub breathy: Option<bool>,
 }
 
 impl Segment {

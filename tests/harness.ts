@@ -2,8 +2,8 @@
  * Test harness for the wasm engine in bun: loads the build (`bun run wasm`) for the main-thread
  * facade, and runs separate engine instances the way the AudioWorklet does.
  */
-import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { readFileSync } from "node:fs";
 import { initChimera } from "../src/wasm/chimera.ts";
 import { writeGestures, fromUtf8 } from "../src/wasm/wire.ts";
 import type { Gesture } from "../src/wasm/types.ts";

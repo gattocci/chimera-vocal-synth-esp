@@ -155,6 +155,14 @@ export interface Segment {
   stress?: number;
   f0?: number;
   wordEnd?: boolean;
+  /** a voiceless stop or affricate's aspiration as its front end decides it (unset: English's rule) */
+  aspirated?: boolean;
+  /** a vowel said with the velum lowered (IPA combining tilde) */
+  nasalized?: boolean;
+  /** a consonant with a secondary palatal gesture, the tongue body raised and fronted (IPA ʲ) */
+  palatalized?: boolean;
+  /** breathy voice: a voiced stop or affricate's release (IPA ʱ), or a vowel (combining diaeresis below) */
+  breathy?: boolean;
 }
 
 export interface PlannedSegment {
