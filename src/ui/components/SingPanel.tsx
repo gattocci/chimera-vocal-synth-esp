@@ -10,6 +10,7 @@ import { Chip, Screen } from "./Screen.tsx";
 import { EncoderPages } from "./Encoder.tsx";
 import { noteName } from "./VoiceControls.tsx";
 import type { InfoFn } from "./AnatomyView.tsx";
+import { t } from "../i18n/index.ts";
 
 /** epilarynx narrowing for the singer's ring (measured: +3 to +12 dB at 2.4–3.6 kHz, adult male) */
 const RING = 0.85;
@@ -27,10 +28,10 @@ export const singWords = mouthWords(sungNow, V.green);
 /** Sing mode's lines over the face: the note, the syllable, the ring */
 export const singInfo: InfoFn = (_m, _f, tele) => {
   const out: string[] = [];
-  if (tele && tele.t.voicing > 0.3) out.push(`Note ${noteName(tele.t.f0)} ${tele.t.f0.toFixed(0)} Hz`);
+  if (tele && tele.t.voicing > 0.3) out.push(`${t("Note")} ${noteName(tele.t.f0)} ${tele.t.f0.toFixed(0)} Hz`);
   const syl = syllableNow();
-  if (syl) out.push(`Syllable ${syl}`);
-  out.push(useStore.getState().artic.epilarynx >= RING - 0.05 ? "Ring on" : "Ring off");
+  if (syl) out.push(`${t("Syllable")} ${syl}`);
+  out.push(useStore.getState().artic.epilarynx >= RING - 0.05 ? t("Ring on") : t("Ring off"));
   return out;
 };
 
@@ -51,31 +52,31 @@ function Lyrics() {
         onChange={(e) => setLyrics(e.target.value)}
         onKeyDown={(e) => e.stopPropagation()}
         rows={1}
-        aria-label="Lyrics to sing"
-        placeholder="Type the words to sing"
-        title="Each note sings the next syllable. Hold a key while you press the next one to sing legato. A lone “-” between words holds a vowel over several notes; hyphens split a word your way (“ti-ger”)."
+        aria-label={t("Lyrics to sing")}
+        placeholder={t("Type the words to sing")}
+        title={t("Each note sings the next syllable. Hold a key while you press the next one to sing legato. A lone “-” between words holds a vowel over several notes; hyphens split a word your way (“ti-ger”).")}
       />
-      <div className="syllables" role="group" aria-label="Syllables. Each note sings the marked one; choose another to start there.">
+      <div className="syllables" role="group" aria-label={t("Syllables. Each note sings the marked one; choose another to start there.")}>
         {syllables.map((s, i) => (
           <span key={i} className={`syl-wrap${s.wordEnd ? " word-end" : ""}`}>
             <button
               className={`syl${!demo && i === cursor ? " next" : ""}${i === at ? " now" : ""}${i < done ? " sung" : ""}${s.melisma ? " held" : ""}`}
               onClick={() => setCursor(i)}
               aria-current={!demo && i === cursor ? "step" : undefined}
-              title={s.melisma ? "Held vowel: carries the previous syllable onto this note" : `Sing from “${s.text}”`}
+              title={s.melisma ? t("Held vowel: carries the previous syllable onto this note") : `${t("Sing from")} «${s.text}»`}
             >
               {s.text}
             </button>
             {s.phraseEnd && (
-              <span className="breath-mark" aria-label="breath">
+              <span className="breath-mark" aria-label={t("Breath mark")}>
                 ’
               </span>
             )}
           </span>
         ))}
-        {!syllables.length && <span className="dim">No words: the keys sing “ah”.</span>}
+        {!syllables.length && <span className="dim">{t("No words: the keys sing “ah”.")}</span>}
         <Chip toggle={false} className="from-start" onClick={() => setCursor(0)} disabled={cursor === 0 && !demo}>
-          From the start
+          {t("From the start")}
         </Chip>
       </div>
     </div>
@@ -91,21 +92,21 @@ function SongControls() {
   const setVibrato = useSing((s) => s.setVibrato);
   return (
     <EncoderPages
-      label="Song voice"
+      label={t("Song voice")}
       pages={[
         {
-          name: "Song",
+          name: t("Song"),
           encoders: [
-            { label: "Vibrato", value: vibrato, min: 0, max: 80, onChange: (v) => setVibrato(Math.round(v)), format: (v) => ({ value: String(Math.round(v)), unit: "cents" }) },
-            { label: "Rate", value: source.vibratoRate, min: 3.5, max: 7.5, onChange: (v) => setSource({ vibratoRate: v }), format: (v) => ({ value: v.toFixed(1), unit: "Hz" }) },
-            { label: "Breathy", value: source.breathiness, min: 0, max: 1, onChange: (v) => setSource({ breathiness: v }), format: (v) => ({ value: String(Math.round(v * 100)), unit: "%" }) },
+            { label: t("Vibrato"), value: vibrato, min: 0, max: 80, onChange: (v) => setVibrato(Math.round(v)), format: (v) => ({ value: String(Math.round(v)), unit: "cents" }) },
+            { label: t("Rate"), value: source.vibratoRate, min: 3.5, max: 7.5, onChange: (v) => setSource({ vibratoRate: v }), format: (v) => ({ value: v.toFixed(1), unit: "Hz" }) },
+            { label: t("Breathy"), value: source.breathiness, min: 0, max: 1, onChange: (v) => setSource({ breathiness: v }), format: (v) => ({ value: String(Math.round(v * 100)), unit: "%" }) },
             // the singer's ring narrows the tube just above the folds, adding the bright band near 3 kHz
             { label: "Ring", value: epilarynx, min: 0, max: 1, onChange: (v) => setArtic({ epilarynx: v }), format: (v) => ({ value: String(Math.round(v * 100)), unit: "%" }) },
           ],
         },
         {
-          name: "Tone",
-          encoders: [{ label: "Bright", value: source.brightness, min: 0, max: 1, onChange: (v) => setSource({ brightness: v }), format: (v) => ({ value: String(Math.round(v * 100)), unit: "%" }) }],
+          name: t("Tone"),
+          encoders: [{ label: t("Bright"), value: source.brightness, min: 0, max: 1, onChange: (v) => setSource({ brightness: v }), format: (v) => ({ value: String(Math.round(v * 100)), unit: "%" }) }],
         },
       ]}
     />
@@ -117,7 +118,7 @@ function DemoSongs() {
   const start = useStore((s) => s.start);
   const demo = useSing((s) => s.demo);
   return (
-    <div className="demo-songs" role="group" aria-label="Demo songs">
+    <div className="demo-songs" role="group" aria-label={t("Demo songs")}>
       {DEMO_SONGS.map((s) => (
         <Chip
           key={s.name}
@@ -130,7 +131,7 @@ function DemoSongs() {
             await playDemo(s.name, body, start);
           }}
         >
-          {demo === s.name ? `Stop “${s.name}”` : s.name}
+          {demo === s.name ? `${t("Stop")} “${s.name}”` : s.name}
         </Chip>
       ))}
     </div>
@@ -146,19 +147,19 @@ export function SingRight() {
   const next = useSing((s) => (s.demo ? null : (s.syllables[s.cursor]?.text ?? null)));
   return (
     <div className="right right-sing">
-      <Screen className="s-roll" title="Piano roll" sub="Notes and the pitch sung">
+      <Screen className="s-roll" title={t("Piano roll")} sub={t("Notes and the pitch sung")}>
         <PianoRoll />
       </Screen>
-      <Screen className="s-lyrics" title="Lyrics" sub="Each note sings the next syllable" tools={<DemoSongs />}>
+      <Screen className="s-lyrics" title={t("Lyrics")} sub={t("Each note sings the next syllable")} tools={<DemoSongs />}>
         <Lyrics />
       </Screen>
-      <Screen className="s-spec" title="Spectrum" sub={ring ? "Ring on" : ""}>
+      <Screen className="s-spec" title={t("Spectrum")} sub={ring ? t("Ring on") : ""}>
         <SpectrumView ring={ring} />
       </Screen>
-      <Screen className="s-voice" title="Voice">
+      <Screen className="s-voice" title={t("Voice")}>
         <SongControls />
       </Screen>
-      <Screen className="s-keys" title="Keys" sub={next ? `Next: ${next}` : ""}>
+      <Screen className="s-keys" title={t("Keys")} sub={next ? `${t("Next")}: ${next}` : ""}>
         <Keys />
       </Screen>
     </div>

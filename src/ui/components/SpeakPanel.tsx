@@ -11,7 +11,9 @@ import { Stroboscope } from "./Stroboscope.tsx";
 import type { InfoFn, SlotsFn } from "./AnatomyView.tsx";
 import { V } from "../colors.ts";
 import { engine } from "../../audio/AudioEngine.ts";
+import { t, t as tt } from "../i18n/index.ts";
 
+// the examples stay English on purpose: the engine speaks English (CMUdict + letter-to-sound)
 const EXAMPLES = ["Hello. Can you hear me?", "She sells sea shells by the sea shore.", "Every sound here is air moving through a throat.", "The quick brown fox jumps over the lazy dog."];
 
 // IPA pulmonic consonant chart (rows = manner, columns = place); empty cells are null
@@ -46,10 +48,10 @@ export const speechSlots: SlotsFn = (_m, a, f) => {
   const sound = soundingSegment();
   const lips = a.lipAp < 0.05 ? "Closed" : a.lipWidth < 0.55 ? "Round" : a.lipAp > 1.3 ? "Open" : "Spread";
   return [
-    sound ? { label: "Sound", value: sound, color: V.green, ipa: true } : { label: "Sound", value: "-", color: V.green },
-    { label: "Jaw", value: a.jaw.toFixed(1), unit: "cm", color: V.red },
-    { label: "Lips", value: lips, color: V.pink },
-    { label: "Soft palate", value: f.velumPort > 0.02 ? "Open" : "Shut", color: V.white },
+    sound ? { label: t("Sound"), value: sound, color: V.green, ipa: true } : { label: t("Sound"), value: "-", color: V.green },
+    { label: t("Jaw"), value: a.jaw.toFixed(1), unit: "cm", color: V.red },
+    { label: t("Lips"), value: t(lips), color: V.pink },
+    { label: t("Soft palate"), value: f.velumPort > 0.02 ? t("Open") : t("Shut"), color: V.white },
   ];
 };
 
@@ -57,12 +59,12 @@ export const speechSlots: SlotsFn = (_m, a, f) => {
 export const speechInfo: InfoFn = (m, _f, tele) => {
   if (!tele) return [];
   const t = tele.t;
-  const out = [t.voicing > 0.3 ? `Voiced ${t.f0.toFixed(0)} Hz` : "Voiceless"];
+  const out = [t.voicing > 0.3 ? `${tt("Voiced")} ${t.f0.toFixed(0)} Hz` : tt("Voiceless")];
   if (t.noiseLevel > 1 && t.noiseNode >= 0) {
     const s = m.branchS(t.noiseNode, t.phLen, t.orLen);
-    if (s >= 0) out.push(`Noise at ${s.toFixed(1)} cm`);
+    if (s >= 0) out.push(`${tt("Noise at")} ${s.toFixed(1)} cm`);
   }
-  out.push(`Lungs ${t.pLung.toFixed(1)} cmH₂O`);
+  out.push(`${tt("Lungs")} ${t.pLung.toFixed(1)} cmH₂O`);
   return out;
 };
 
@@ -79,8 +81,8 @@ function ConsonantChart(props: { onPad: (c: string) => void }) {
           <tr>
             <th />
             {PLACES.map((p, i) => (
-              <th key={p} scope="col" title={p} aria-label={p}>
-                {PLACE_SHORT[i]}
+              <th key={p} scope="col" title={t(p)} aria-label={t(p)}>
+                {t(PLACE_SHORT[i])}
               </th>
             ))}
           </tr>
@@ -88,14 +90,14 @@ function ConsonantChart(props: { onPad: (c: string) => void }) {
         <tbody>
           {CHART.map(([manner, cells]) => (
             <tr key={manner}>
-              <th scope="row" title={manner} aria-label={manner}>
-                {MANNER_SHORT[manner] ?? manner}
+              <th scope="row" title={t(manner)} aria-label={t(manner)}>
+                {t(MANNER_SHORT[manner] ?? manner)}
               </th>
               {cells.map((pair, i) => (
                 <td key={i}>
                   {pair.map((sym, j) =>
                     sym ? (
-                      <button key={j} className={`ipa${sym === now ? " now" : ""}`} onClick={() => props.onPad(sym)} title={`Say it between two vowels`}>
+                      <button key={j} className={`ipa${sym === now ? " now" : ""}`} onClick={() => props.onPad(sym)} title={t("Say it between two vowels")}>
                         {sym}
                       </button>
                     ) : (
@@ -141,7 +143,7 @@ export function SpeakRight() {
 
   return (
     <div className="right right-speak">
-      <Screen className="s-say" title="Say" sub="Text to speech" tools={<Toggle label="Text is IPA" checked={ipa} onChange={setIpa} />}>
+      <Screen className="s-say" title={t("Say")} sub={t("Text to speech")} tools={<Toggle label={t("Text is IPA")} checked={ipa} onChange={setIpa} />}>
         <div className="say">
           <div className="say-row">
             <textarea
@@ -153,27 +155,27 @@ export function SpeakRight() {
               }}
               rows={2}
               spellCheck={!ipa}
-              aria-label={ipa ? "IPA to speak" : "Text to speak"}
-              placeholder={ipa ? "Type IPA, for example ˈhɛloʊ" : "Type something for the voice to say"}
+              aria-label={ipa ? t("IPA to speak") : t("Text to speak")}
+              placeholder={ipa ? t("Type IPA, for example ˈhɛloʊ") : t("Type something for the voice to say")}
             />
             <div className="say-actions">
               <button className="primary" onClick={() => void speak()} disabled={busy}>
-                {busy ? "Preparing…" : "Speak"}
+                {busy ? t("Preparing…") : t("Speak")}
               </button>
               <button className="ghost" onClick={stopSpeaking}>
-                Stop
+                {t("Stop")}
               </button>
             </div>
           </div>
           <div className="say-row">
             <p className="transcription" aria-live="polite">
-              {trans ? `/${trans}/` : "The transcription appears here."}
+              {trans ? `/${trans}/` : t("The transcription appears here.")}
             </p>
             <div className="say-rate">
-              <Slider label="Rate" value={rate} min={0.5} max={1.8} onChange={setRate} format={(v) => `${v.toFixed(2)}×`} />
+              <Slider label={t("Rate")} value={rate} min={0.5} max={1.8} onChange={setRate} format={(v) => `${v.toFixed(2)}×`} />
             </div>
           </div>
-          <div className="examples" role="group" aria-label="Examples">
+          <div className="examples" role="group" aria-label={t("Examples")}>
             {EXAMPLES.map((ex) => (
               <Chip
                 key={ex}
@@ -189,15 +191,15 @@ export function SpeakRight() {
           </div>
         </div>
       </Screen>
-      <Screen className="s-score" title="Gestural score">
+      <Screen className="s-score" title={t("Gestural score")}>
         <ScoreView />
       </Screen>
       <Screen
         className="s-chart"
-        title="Consonants"
-        sub="Between two vowels"
+        title={t("Consonants")}
+        sub={t("Between two vowels")}
         tools={
-          <div className="vowel-pick" role="group" aria-label="Vowel around it">
+          <div className="vowel-pick" role="group" aria-label={t("Vowel around it")}>
             {["ɑ", "i", "u", "ə"].map((v) => (
               <Chip key={v} on={vowel === v} onClick={() => setVowel(v)} className="ipa-chip">
                 {v}
@@ -208,10 +210,10 @@ export function SpeakRight() {
       >
         <ConsonantChart onPad={(c) => void pad(c)} />
       </Screen>
-      <Screen className="s-tube" title="Tube" sub="Glottis to lips">
+      <Screen className="s-tube" title={t("Tube")} sub={t("Glottis to lips")}>
         <TubeView />
       </Screen>
-      <Screen className="s-folds" title="Vocal folds" sub="Slowed 100×">
+      <Screen className="s-folds" title={t("Vocal folds")} sub={t("Slowed 100×")}>
         <Stroboscope />
       </Screen>
     </div>
