@@ -15,7 +15,7 @@ export type Lang = "es" | "en";
 const STORAGE_KEY = "chimera.lang";
 const LANGS: Lang[] = ["es", "en"];
 
-/** `?lang=es|en` wins (shareable links, the e2e run), then the saved choice, then Spanish. */
+/** `?lang=es|en` wins (shareable links, the e2e run), then the saved choice, then English. */
 function initialLang(): Lang {
   try {
     const asked = new URLSearchParams(window.location.search).get("lang") as Lang | null;
@@ -25,7 +25,7 @@ function initialLang(): Lang {
   } catch {
     /* no persistence (private mode): the default still applies */
   }
-  return "es";
+  return "en";
 }
 
 interface LangStore {
