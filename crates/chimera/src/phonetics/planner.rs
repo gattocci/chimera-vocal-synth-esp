@@ -348,12 +348,9 @@ pub fn plan_utterance(input: &[Segment], o: &PlanOptions) -> Plan {
             gestures.push(Gesture::new(t0, t1, 0.012, 0.015, 8.0, one(ControlKey::CLOSURE, 1.0)).label("ʔ"));
         } else if def.voicing == Voicing::Voiceless {
             if def.manner == Manner::Stop || def.manner == Manner::Affricate {
-                // aspirated when syllable-initial before a vowel and not after /s/ (English-like);
-                // Spanish voiceless stops are never aspirated
-                let aspirated = o.lang != Some(Lang::Spanish) && next_vowel && !prev_seg.is_some_and(|p| p.ipa == "s");
-                // as the front end says; by default English's rule: aspirated when syllable-initial
-                // before a vowel and not after /s/
-                let aspirated = s.aspirated.unwrap_or_else(|| next_vowel && !prev_seg.is_some_and(|p| p.ipa == "s"));
+                // as the front end says; by default English's rule, and a Spanish voiceless
+                // stop never aspirates
+                let aspirated = s.aspirated.unwrap_or_else(|| o.lang != Some(Lang::Spanish) && next_vowel && !prev_seg.is_some_and(|p| p.ipa == "s"));
                 let vot = if aspirated { 0.05 / rate } else { 0.012 };
                 let g = Gesture::new(t0 + 0.25 * dur, t1 + vot * 0.4, 0.035, if aspirated { 0.045 } else { 0.02 }, 6.0, one(ControlKey::ABDUCTION, if aspirated { 0.36 } else { 0.22 })).label("aspiration");
                 voiced_again = g.end();
