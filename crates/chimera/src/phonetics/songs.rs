@@ -48,4 +48,50 @@ pub static DEMO_SONGS: &[DemoSong] = &[
         ],
         octave: SongOctave { male: -1.0, female: 0.0, child: 0.0 },
     },
+    DemoSong {
+        // traditional Spanish folk song
+        name: "Estaba la Catalina",
+        bpm: 100.0,
+        lyrics: "Estaba la Catalina. Sentada bajo un laurel. Mirando la frescura de las aguas al caer.",
+        notes: &[
+            // Estaba la Catalina
+            [64.0, 1.0], [64.0, 1.0], [62.0, 1.0], [64.0, 1.0], [64.0, 1.0], [66.0, 1.0], [67.0, 1.0], [64.0, 2.0],
+            // sentada bajo un laurel
+            [67.0, 1.0], [69.0, 1.0], [67.0, 1.0], [66.0, 1.0], [64.0, 1.0], [62.0, 1.0], [64.0, 1.0], [69.0, 2.0],
+            // mirando la frescura de las aguas al caer
+            [66.0, 1.0], [67.0, 1.0], [64.0, 1.0], [64.0, 1.0], [66.0, 1.0], [67.0, 1.0], [69.0, 1.0], [66.0, 1.0],
+            [64.0, 1.0], [62.0, 1.0], [62.0, 1.0], [60.0, 1.0], [62.0, 1.0], [64.0, 2.0],
+        ],
+        octave: SongOctave { male: -1.0, female: 0.0, child: 0.0 },
+    },
+    DemoSong {
+        // an original tune for this instrument
+        name: "Aire",
+        bpm: 84.0,
+        lyrics: "Tengo un poquito de aire, un poquito de voz. Un poquito de sueño, un poquito de amor.",
+        notes: &[
+            // Tengo un poquito de aire
+            [64.0, 1.0], [64.0, 1.0], [62.0, 1.0], [64.0, 1.0], [66.0, 1.0], [64.0, 1.0], [62.0, 1.0], [62.0, 1.0], [64.0, 2.0],
+            // Un poquito de voz
+            [62.0, 1.0], [64.0, 1.0], [66.0, 1.0], [64.0, 1.0], [62.0, 1.0], [64.0, 2.0],
+            // Un poquito de sueño
+            [62.0, 1.0], [64.0, 1.0], [66.0, 1.0], [64.0, 1.0], [62.0, 1.0], [64.0, 1.0], [62.0, 2.0],
+            // Un poquito de amor
+            [62.0, 1.0], [64.0, 1.0], [66.0, 1.0], [64.0, 1.0], [62.0, 1.0], [62.0, 1.0], [64.0, 2.0],
+        ],
+        octave: SongOctave { male: -1.0, female: 0.0, child: 0.0 },
+    },
+    DemoSong {
+        // an original tune for this instrument
+        name: "Brisa",
+        bpm: 100.0,
+        lyrics: "La brisa mece la mar. Mece la mar la brisa.",
+        notes: &[
+            // La brisa mece la mar
+            [67.0, 1.0], [67.0, 1.0], [65.0, 1.0], [64.0, 1.0], [64.0, 1.0], [62.0, 1.0], [64.0, 2.0],
+            // Mece la mar la brisa
+            [64.0, 1.0], [64.0, 1.0], [62.0, 1.0], [62.0, 1.0], [60.0, 1.0], [62.0, 1.0], [64.0, 2.0],
+        ],
+        octave: SongOctave { male: -1.0, female: 0.0, child: 0.0 },
+    },
 ];
