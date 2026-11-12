@@ -26,6 +26,8 @@ export const ES: Record<string, string> = {
   "Starting…": "Iniciando…",
   "Start audio": "Iniciar audio",
   "Source code on GitHub": "Código fuente en GitHub",
+  Breathe: "Respirar",
+  "Press again to retry.": "Pulsa para reintentar.",
 
   "Sound pressure": "Presión sonora",
   Airflow: "Flujo de aire",
@@ -91,6 +93,7 @@ export const ES: Record<string, string> = {
   // ---------------------------------------------------------------- speak
   Say: "Decir",
   "Text to speech": "Texto a voz",
+  "What to say": "Qué decir",
   "Text is IPA": "El texto es AFI",
   English: "Inglés",
   Spanish: "Español",
@@ -102,6 +105,9 @@ export const ES: Record<string, string> = {
   "Preparing…": "Preparando…",
   Stop: "Detener",
   "The transcription appears here.": "La transcripción aparece aquí.",
+  "Not said": "No se dice",
+  "No sound yet": "Aún sin sonido",
+  "Mark ignored": "Marca ignorada",
   Rate: "Velocidad",
   Examples: "Ejemplos",
   "Gestural score": "Partitura gestual",
@@ -197,6 +203,12 @@ export const ES: Record<string, string> = {
   step: "paso",
   Step: "Paso",
   "Play beat": "Tocar ritmo",
+  Beat: "Ritmo",
+  Pattern: "Patrón",
+  Bass: "Bajo",
+  "Mic FX": "FX de micro",
+  "Close-mic effect: the bass, presence and squash of a mic held to the lips":
+    "Efecto de micro cercano: el bajo, la presencia y la compresión de un micro pegado a los labios",
   "Close mic": "Cerrar micrófono",
   Transport: "Transporte",
   Tempo: "Tempo",
@@ -374,6 +386,7 @@ export const ES: Record<string, string> = {
   AREA: "ÁREA",
   FLOW: "FLUJO",
   "OPEN": "ABIERTO",
+  "MAKE A SOUND TO SEE THEM VIBRATE": "HAZ UN SONIDO PARA VERLAS VIBRAR",
   "START AUDIO TO SEE THEM VIBRATE": "INICIA EL AUDIO PARA VERLAS VIBRAR",
   NOSE: "NARIZ",
   "VELUM OPEN": "VELO ABIERTO",
@@ -399,6 +412,8 @@ export const ES: Record<string, string> = {
   Off: "Apagado",
   "MIDI keyboard": "Teclado MIDI",
   "Disconnect the MIDI keyboard": "Desconecta el teclado MIDI",
+  "Press to disconnect.": "Pulsa para desconectar.",
+  "Press to connect (the browser asks for access).": "Pulsa para conectar (el navegador pide acceso).",
   "Play with a MIDI keyboard (the browser asks for access)":
     "Toca con un teclado MIDI (el navegador pide acceso)",
 
