@@ -10,6 +10,7 @@ pub mod durations;
 pub mod english;
 pub mod inventory;
 pub mod ipa;
+pub mod korean;
 pub mod planner;
 pub mod sing;
 pub mod songs;
@@ -39,6 +40,10 @@ pub struct Segment {
     /// before a vowel, not after /s/)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub aspirated: Option<bool>,
+    /// how long an aspirated stop or affricate aspirates (voice onset time, s), as its front end
+    /// decides it (Korean's lax stops aspirate briefly, its aspirated ones long); None: 50 ms
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vot: Option<f64>,
     /// a vowel said with the velum lowered (IPA combining tilde); None or false: oral
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub nasalized: Option<bool>,
@@ -105,7 +110,7 @@ pub struct Plan {
 }
 
 /// A sung syllable.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Syllable {
     /// lyric text shown on the note
@@ -117,8 +122,11 @@ pub struct Syllable {
     /// continue the previous syllable's vowel at a new pitch
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub melisma: Option<bool>,
-    /// last syllable of a word (codas sound here; phrase breaks follow punctuation)
+    /// last syllable of a word (codas sound here; phrase breaks follow punctuation); may be left
+    /// out of hand-written JSON (false)
+    #[serde(default)]
     pub word_end: bool,
-    /// a breath follows (comma, full stop, line break)
+    /// a breath follows (comma, full stop, line break); may be left out (false)
+    #[serde(default)]
     pub phrase_end: bool,
 }

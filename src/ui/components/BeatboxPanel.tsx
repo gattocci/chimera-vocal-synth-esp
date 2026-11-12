@@ -2,7 +2,9 @@ import { useEffect, useRef, useState } from "react";
 import { useStore } from "../store.ts";
 import { engine } from "../../audio/AudioEngine.ts";
 import { BEAT_SOUNDS, BEAT_PRESETS, formatBeat, parseBeat, type Airstream } from "../../wasm/engine.ts";
-import { Keys } from "./Keys.tsx";
+import { Keys, MidiButton } from "./Keys.tsx";
+import { ActionBar, PrimaryButton } from "./ActionBar.tsx";
+import { Menu } from "./Controls.tsx";
 import { Chip, Screen } from "./Screen.tsx";
 import { EncoderPages } from "./Encoder.tsx";
 import { Spectrogram } from "./Spectrogram.tsx";
@@ -63,6 +65,7 @@ function Pads() {
     const onKey = (e: KeyboardEvent) => {
       if (e.repeat || e.metaKey || e.ctrlKey || e.altKey) return;
       const t = e.target as HTMLElement;
+      if (t && t.tagName === "SELECT") return;
       if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA") && (t as HTMLInputElement).type !== "range" && (t as HTMLInputElement).type !== "checkbox") return;
       const i = "1234567890".indexOf(e.key);
       if (i >= 0 && i < BEAT_SOUNDS.length) {
@@ -133,14 +136,36 @@ function Sequencer() {
   );
 }
 
-function Transport() {
-  const beat = useStore((s) => s.beat);
-  const setTempo = useStore((s) => s.setBeatTempo);
+/** Beatbox's main button: play or stop the beat; the pattern and the close-mic effect beside it. */
+function BeatActions() {
+  const playing = useStore((s) => s.beat.playing);
+  const preset = useStore((s) => s.beat.preset);
   const setPlaying = useStore((s) => s.setBeatPlaying);
-  const setSteps = useStore((s) => s.setBeatSteps);
   const loadPreset = useStore((s) => s.loadBeatPreset);
   const mic = useStore((s) => s.mic);
   const setMic = useStore((s) => s.setMic);
+  const press = () => setPlaying(!playing);
+  return (
+    <ActionBar label={t("Beat")} onSpace={press}>
+      <PrimaryButton label={t("Play beat")} playing={playing} onClick={press} />
+      <Menu
+        label={t("Pattern")}
+        value={preset ?? ""}
+        options={[...(preset ? [] : [{ value: "", label: t("Your beat"), disabled: true }]), ...BEAT_PRESETS.map((p) => ({ value: p.name, label: p.name }))]}
+        onChange={(name) => loadPreset(name)}
+      />
+      {/* an effect on the sound, not the microphone: "Close mic" read as "shut the mic" */}
+      <Chip on={mic} onClick={() => setMic(!mic)} title={t("Close-mic effect: the bass, presence and squash of a mic held to the lips")}>
+        {t("Mic FX")}
+      </Chip>
+    </ActionBar>
+  );
+}
+
+function Transport() {
+  const beat = useStore((s) => s.beat);
+  const setTempo = useStore((s) => s.setBeatTempo);
+  const setSteps = useStore((s) => s.setBeatSteps);
   const [text, setText] = useState(() => formatBeat(beat.steps));
   const editing = useRef(false);
   useEffect(() => {
@@ -148,14 +173,6 @@ function Transport() {
   }, [beat.steps]);
   return (
     <div className="transport">
-      <div className="transport-top">
-        <button className={`primary play${beat.playing ? " on" : ""}`} onClick={() => setPlaying(!beat.playing)} aria-pressed={beat.playing}>
-          {beat.playing ? t("Stop") : t("Play beat")}
-        </button>
-        <Chip on={mic} onClick={() => setMic(!mic)}>
-          {t("Close mic")}
-        </Chip>
-      </div>
       <div className="transport-encoders">
         <EncoderPages
           label={t("Transport")}
@@ -170,13 +187,6 @@ function Transport() {
             },
           ]}
         />
-      </div>
-      <div className="examples presets" role="group" aria-label={t("Example beats")}>
-        {BEAT_PRESETS.map((p) => (
-          <Chip key={p.name} on={beat.preset === p.name} toggle={false} onClick={() => loadPreset(p.name)}>
-            {t(p.name)}
-          </Chip>
-        ))}
       </div>
       <label className="sbn">
         <span className="dim">{t("Beat as text")}</span>
@@ -201,24 +211,25 @@ function Transport() {
   );
 }
 
-/** Beatbox mode's right column: the step sequencer, the waterfall, the pads, the transport, the keys (hum bass). */
+/** Beatbox mode's right column: the beat button, the step sequencer, the waterfall, the pads, tempo and the beat as text, the keys (hum bass). */
 export function BeatboxRight() {
-  const beat = useStore((s) => s.beat);
   return (
     <div className="right right-beatbox">
-      <Screen className="s-seq" title={t("Step sequencer")} sub={`${beat.preset ? t(beat.preset) : t("Your beat")} / ${beat.bpm} bpm`}>
+      <BeatActions />
+      <Screen className="s-seq" title={t("Step sequencer")}>
         <Sequencer />
       </Screen>
-      <Screen className="s-wf" title={t("Spectrogram")} sub={t("Last two seconds / newest in front")}>
+      <Screen className="s-wf" title={t("Spectrogram")}>
         <Spectrogram />
       </Screen>
-      <Screen className="s-pads" title={t("Pads")} sub={t("Keys 1 to 0")}>
+      <Screen className="s-pads" title={t("Pads")}>
         <Pads />
       </Screen>
-      <Screen className="s-transport" title={t("Transport")}>
+      <Screen className="s-transport" title={t("Tempo")}>
         <Transport />
       </Screen>
-      <Screen className="s-keys s-keys-compact" title={t("Keys")} sub={t("Hum a bass note")}>
+      {/* the keys hum a bass note under the beat */}
+      <Screen className="s-keys s-keys-compact" title={t("Bass")} tools={<MidiButton />}>
         <Keys />
       </Screen>
     </div>

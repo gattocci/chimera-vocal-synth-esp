@@ -1,11 +1,17 @@
-//! Lyrics → sung syllables. Words come from the pronouncing dictionary (unreduced: sung function
-//! words keep full vowels), are split into syllables by the maximal-onset principle with English
-//! onset clusters, and the spelling is split to match for display ("twin-kle").
-//! Typed hyphens force syllable breaks; a lone "-" (or "~") holds the previous vowel onto the
-//! next note (melisma), as in vocaloid editors.
+//! Lyrics → sung syllables, through language front ends (docs/language-front-ends.md). A front
+//! end claims the words written in its script and turns each into syllables in IPA; the router
+//! here walks the lyrics, sends each word to the front end that claims it, and handles what every
+//! language shares: melisma marks, phrase punctuation and word ends.
+//!
+//! English words come from the pronouncing dictionary (unreduced: sung function words keep full
+//! vowels), are split into syllables by the maximal-onset principle with English onset clusters,
+//! and the spelling is split to match for display ("twin-kle"). Hangul words go to
+//! [`super::korean`], one syllable per block. Typed hyphens force syllable breaks; a lone "-" (or
+//! "~") holds the previous vowel onto the next note (melisma), as in vocaloid editors.
 
 use crate::anatomy::human::BodyMix;
 use super::english::js_is_space;
+use super::korean::Korean;
 use super::planner::is_vowel;
 use super::{Segment, Syllable};
 use serde::{Deserialize, Serialize};
@@ -242,77 +248,149 @@ impl<F: Fn(&str, bool) -> Vec<Segment>> WordSource for F {
 fn is_lyric_punct(c: char) -> bool {
     matches!(c, '.' | ',' | ';' | ':' | '!' | '?' | '\n')
 }
-
-/// `is_word_start(c)` with the letters each language's words are made of.
-fn is_word_start(c: char, lang: Lang) -> bool {
-    c.is_ascii_alphabetic() || c == '\'' || (lang == Lang::Spanish && matches!(c, 'á' | 'é' | 'í' | 'ó' | 'ú' | 'ü' | 'ñ' | 'Á' | 'É' | 'Í' | 'Ó' | 'Ú' | 'Ü' | 'Ñ'))
+/// A language front end: claims the words written in its script and turns each into sung syllables
+/// (IPA onset, nucleus and coda; each syllable's text is its part of the word's spelling).
+pub trait FrontEnd {
+    /// A word this front end reads starts with `c`.
+    fn starts(&self, c: char) -> bool;
+    /// `c` continues a word this front end started.
+    fn continues(&self, c: char) -> bool {
+        self.starts(c)
+    }
+    /// One word → its syllables (the router marks the last as the word's end).
+    fn word(&self, word: &str) -> Vec<Syllable>;
 }
 
-/// `text.match(/[A-Za-z'][A-Za-z'\-]*|(?<=\s|^)[~-](?=\s|$)|[.,;:!?\n]/g)`
-fn lyric_tokens(text: &str, lang: Lang) -> Vec<String> {
+/// English, through a [`WordSource`] (the pronouncing dictionary, or letter-to-sound rules).
+pub struct English<'a, W: WordSource>(pub &'a W);
+
+impl<W: WordSource> FrontEnd for English<'_, W> {
+    fn starts(&self, c: char) -> bool {
+        c.is_ascii_alphabetic() || c == '\''
+    }
+    fn continues(&self, c: char) -> bool {
+        self.starts(c) || c == '-'
+    }
+    fn word(&self, tok: &str) -> Vec<Syllable> {
+        // typed hyphens split syllables explicitly ("ti-ger"); otherwise the dictionary decides
+        let parts: Vec<&str> = tok.split('-').filter(|p| !p.is_empty()).collect();
+        let mut syls: Vec<Syllable> = Vec::new();
+        for part in &parts {
+            let sy = syllabify_segments(&self.0.word(&part.to_lowercase(), false));
+            let spell: Vec<String> = if parts.len() > 1 {
+                let mut v = vec![part.to_string()];
+                v.extend(std::iter::repeat_n("~".to_string(), sy.len().saturating_sub(1)));
+                v
+            } else {
+                split_spelling(part, sy.len())
+            };
+            for (i, s) in sy.into_iter().enumerate() {
+                syls.push(Syllable { text: spell.get(i).cloned().unwrap_or_else(|| "~".into()), onset: s.onset, nucleus: s.nucleus, coda: s.coda, melisma: None, word_end: false, phrase_end: false, ..Default::default() });
+            }
+        }
+        syls
+    }
+}
+
+/// Spanish, through a [`WordSource`] (the Spanish G2P and its dialects). Words are made of ASCII
+/// letters and the Spanish written accents; syllables follow the Spanish onsets and the written
+/// accents split the spelling ([pa-ís], [dí-a]).
+pub struct Spanish<'a, W: WordSource>(pub &'a W);
+
+impl<W: WordSource> FrontEnd for Spanish<'_, W> {
+    fn starts(&self, c: char) -> bool {
+        c.is_ascii_alphabetic() || c == '\'' || matches!(c, 'á' | 'é' | 'í' | 'ó' | 'ú' | 'ü' | 'ñ' | 'Á' | 'É' | 'Í' | 'Ó' | 'Ú' | 'Ü' | 'Ñ')
+    }
+    fn continues(&self, c: char) -> bool {
+        self.starts(c) || c == '-'
+    }
+    fn word(&self, tok: &str) -> Vec<Syllable> {
+        // typed hyphens split syllables explicitly ("gra-cias"); otherwise the G2P decides
+        let parts: Vec<&str> = tok.split('-').filter(|p| !p.is_empty()).collect();
+        let mut syls: Vec<Syllable> = Vec::new();
+        for part in &parts {
+            let sy = syllabify_segments_lang(&self.0.word(&part.to_lowercase(), false), Lang::Spanish);
+            let spell: Vec<String> = if parts.len() > 1 {
+                let mut v = vec![part.to_string()];
+                v.extend(std::iter::repeat_n("~".to_string(), sy.len().saturating_sub(1)));
+                v
+            } else {
+                split_spelling_lang(part, sy.len(), Lang::Spanish)
+            };
+            for (i, s) in sy.into_iter().enumerate() {
+                syls.push(Syllable { text: spell.get(i).cloned().unwrap_or_else(|| "~".into()), onset: s.onset, nucleus: s.nucleus, coda: s.coda, melisma: None, word_end: false, phrase_end: false, ..Default::default() });
+            }
+        }
+        syls
+    }
+}
+
+enum Token {
+    Word(usize, String),
+    Mark(char),
+}
+
+/// Words (with the index of the front end that claims them), melisma marks and phrase punctuation,
+/// in order. For English and Hangul this is
+/// `text.match(/[A-Za-z'][A-Za-z'\-]*|[가-힣]+|(?<=\s|^)[~-](?=\s|$)|[.,;:!?\n]/g)`.
+fn lyric_tokens(text: &str, front_ends: &[&dyn FrontEnd]) -> Vec<Token> {
     let s: Vec<char> = text.chars().collect();
     let mut out = Vec::new();
     let mut i = 0;
     while i < s.len() {
         let c = s[i];
-        if is_word_start(c, lang) {
+        if let Some(k) = front_ends.iter().position(|f| f.starts(c)) {
             let start = i;
             i += 1;
-            while i < s.len() && (is_word_start(s[i], lang) || s[i] == '-') {
+            while i < s.len() && front_ends[k].continues(s[i]) {
                 i += 1;
             }
-            out.push(s[start..i].iter().collect());
+            out.push(Token::Word(k, s[start..i].iter().collect()));
             continue;
         }
         let melisma = (c == '~' || c == '-') && (i == 0 || js_is_space(s[i - 1])) && (i + 1 == s.len() || js_is_space(s[i + 1]));
         if melisma || is_lyric_punct(c) {
-            out.push(c.to_string());
+            out.push(Token::Mark(c));
         }
         i += 1;
     }
     out
 }
 
-/// Lyrics text → syllables (needs the pronouncing dictionary for real words).
-pub fn lyrics_to_syllables(text: &str, g2p: &impl WordSource) -> Vec<Syllable> {
+/// Lyrics text → syllables, each word read by the first front end that claims it. Characters no
+/// front end claims (other scripts, symbols) are skipped.
+pub fn read_lyrics(text: &str, front_ends: &[&dyn FrontEnd]) -> Vec<Syllable> {
     let mut out: Vec<Syllable> = Vec::new();
-    let lang = g2p.lang();
-    // words, melisma marks and phrase punctuation, in order
-    let tokens = lyric_tokens(&text.replace('’', "'"), lang);
-    for tok in &tokens {
-        if tok.chars().count() == 1 && tok.chars().all(is_lyric_punct) {
-            if let Some(last) = out.last_mut() {
-                last.phrase_end = true;
+    for tok in lyric_tokens(&text.replace('’', "'"), front_ends) {
+        match tok {
+            Token::Mark(c) if is_lyric_punct(c) => {
+                if let Some(last) = out.last_mut() {
+                    last.phrase_end = true;
+                }
             }
-            continue;
-        }
-        if tok == "-" || tok == "~" {
-            if let Some(prev) = out.last() {
-                let s = Syllable { text: "~".into(), onset: vec![], nucleus: prev.nucleus.clone(), coda: vec![], melisma: Some(true), word_end: prev.word_end, phrase_end: false };
-                out.push(s);
+            Token::Mark(_) => {
+                if let Some(prev) = out.last() {
+                    let s = Syllable { text: "~".into(), onset: vec![], nucleus: prev.nucleus.clone(), coda: vec![], melisma: Some(true), word_end: prev.word_end, phrase_end: false, ..Default::default() };
+                    out.push(s);
+                }
             }
-            continue;
-        }
-        // typed hyphens split syllables explicitly ("ti-ger"); otherwise the dictionary decides
-        let parts: Vec<&str> = tok.split('-').filter(|p| !p.is_empty()).collect();
-        let mut syls: Vec<Syllable> = Vec::new();
-        for part in &parts {
-            let sy = syllabify_segments_lang(&g2p.word(&part.to_lowercase(), false), lang);
-            let spell: Vec<String> = if parts.len() > 1 {
-                let mut v = vec![part.to_string()];
-                v.extend(std::iter::repeat_n("~".to_string(), sy.len().saturating_sub(1)));
-                v
-            } else {
-                split_spelling_lang(part, sy.len(), lang)
-            };
-            for (i, s) in sy.into_iter().enumerate() {
-                syls.push(Syllable { text: spell.get(i).cloned().unwrap_or_else(|| "~".into()), onset: s.onset, nucleus: s.nucleus, coda: s.coda, melisma: None, word_end: false, phrase_end: false });
+            Token::Word(k, w) => {
+                let mut syls = front_ends[k].word(&w);
+                if let Some(last) = syls.last_mut() {
+                    last.word_end = true;
+                }
+                out.append(&mut syls);
             }
         }
-        if let Some(last) = syls.last_mut() {
-            last.word_end = true;
-        }
-        out.append(&mut syls);
     }
     out
+}
+
+/// Lyrics text → syllables through the built-in front ends that need no data beyond the G2P: the
+/// G2P's language claims its own words, and Hangul goes to [`super::korean`].
+pub fn lyrics_to_syllables(text: &str, g2p: &impl WordSource) -> Vec<Syllable> {
+    match g2p.lang() {
+        Lang::Spanish => read_lyrics(text, &[&Spanish(g2p), &Korean]),
+        Lang::English => read_lyrics(text, &[&English(g2p), &Korean]),
+    }
 }

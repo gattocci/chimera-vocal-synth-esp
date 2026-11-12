@@ -344,3 +344,57 @@ describe("settings that belong to one tab stay in it", () => {
     done();
   });
 });
+
+describe("a main button pressed before the audio is up", () => {
+  const store = async () => (await import("../src/ui/store.ts")).useStore;
+  const failing = () => Promise.reject(new Error("no audio device"));
+
+  test("Breathe breathes once the audio starts, but not in a tab switched to meanwhile", async () => {
+    const useStore = await store();
+    const st = useStore.getState;
+    useStore.setState({ started: false, mode: "play", hold: false });
+    let pending = st().toggleBreath();
+    startAudio();
+    await pending;
+    expect(st().hold).toBe(true);
+    st().setHold(false);
+    // a tab switched to meanwhile (Sing breathes by itself: a held breath would drone), and away
+    // and back again: the press belonged to the Play the player left
+    for (const away of [["sing"], ["sing", "play"]] as const) {
+      useStore.setState({ started: false, mode: "play", hold: false });
+      pending = st().toggleBreath();
+      for (const m of away) st().setMode(m);
+      startAudio();
+      await pending;
+      expect(st().hold).toBe(false);
+    }
+  });
+
+  test("a second press of Breathe while the audio starts turns it off again", async () => {
+    const useStore = await store();
+    const st = useStore.getState;
+    useStore.setState({ started: false, mode: "bestiary", hold: false });
+    const first = st().toggleBreath();
+    const second = st().toggleBreath();
+    startAudio();
+    await Promise.all([first, second]);
+    expect(st().hold).toBe(false);
+    useStore.setState({ mode: "play" });
+  });
+
+  test("a failed start leaves Breathe off and the beat stopped, so the buttons offer a retry", async () => {
+    const useStore = await store();
+    const start = engineStub.start;
+    engineStub.start = failing;
+    useStore.setState({ started: false, mode: "play", hold: false });
+    await useStore.getState().toggleBreath();
+    expect(useStore.getState().hold).toBe(false);
+    expect(useStore.getState().startError).toBe("no audio device");
+    useStore.getState().setMode("beatbox");
+    useStore.getState().setBeatPlaying(true);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(useStore.getState().beat.playing).toBe(false);
+    engineStub.start = start;
+    useStore.setState({ startError: null });
+  });
+});

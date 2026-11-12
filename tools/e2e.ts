@@ -30,7 +30,8 @@ async function run(viewport: { width: number; height: number }, tag: string) {
   await page.screenshot({ path: `${outDir}/${tag}-0-idle.png` });
   // the app opens on Sing; this run starts in Play
   await page.getByRole("radio", { name: "Play" }).click();
-  const startBtn = page.getByRole("button", { name: /breathe in and start/i });
+  // each tab's main button starts the audio: Play's breathes
+  const startBtn = page.getByRole("button", { name: /^Breathe$/ });
   await startBtn.click();
   await page.waitForTimeout(1800);
   await page.screenshot({ path: `${outDir}/${tag}-1-running.png` });
@@ -103,9 +104,44 @@ async function run(viewport: { width: number; height: number }, tag: string) {
   }
   logs.push(`[${tag}] speech rms then silence ${speechRms.map((r) => r.toFixed(4)).join(",")}`);
   if (!(Math.max(...speechRms.slice(-3)) < 1e-3)) errors.push(`[${tag}] voice still sounding after the phrase: ${speechRms.slice(-3).join(",")}`);
+  // the Examples menu puts a phrase in the box as text (not IPA), then reads Examples again, so
+  // the same phrase can be picked a second time
+  const examples = page.getByRole("combobox", { name: "Examples" });
+  const sayBox = page.locator(".say textarea");
+  const ipaChip = page.getByRole("button", { name: "Text is IPA" });
+  const SHELLS = "She sells sea shells by the sea shore.";
+  await ipaChip.click();
+  await examples.selectOption({ label: SHELLS });
+  const picked = { box: await sayBox.inputValue(), menu: await examples.inputValue(), ipa: await ipaChip.getAttribute("aria-pressed") };
+  await sayBox.fill("Something else.");
+  await examples.selectOption({ label: SHELLS });
+  const again = await sayBox.inputValue();
+  logs.push(`[${tag}] example picked: ${JSON.stringify(picked)}, picked again: "${again}"`);
+  if (picked.box !== SHELLS || picked.menu !== "" || picked.ipa !== "false" || again !== SHELLS) errors.push(`[${tag}] the Examples menu didn't put the phrase in as text and reset (${JSON.stringify(picked)}, again "${again}")`);
   await page.locator("button.ipa", { hasText: "ʃ" }).first().click();
   await page.waitForTimeout(700);
   await page.screenshot({ path: `${outDir}/${tag}-4-pad.png` });
+  // IPA mode tells the person which symbols the voice will not say (it used to drop them without a
+  // word: upstream issue 52), as they type; plain text and clean IPA get no notice
+  const notice = page.locator(".say-skipped");
+  const box_ = page.getByRole("textbox", { name: /to speak/ });
+  const noticeText = async () => ((await notice.textContent()) ?? "").trim();
+  if ((await notice.getAttribute("aria-live")) !== "polite") errors.push(`[${tag}] the skipped-symbols notice is not a polite live region`);
+  if (await noticeText()) errors.push(`[${tag}] the skipped-symbols notice shows with IPA mode off: ${await noticeText()}`);
+  await ipaChip.click(); // IPA mode on (a toggle button)
+  await box_.fill("ɕiɛ˥˩");
+  const shown = await noticeText();
+  logs.push(`[${tag}] skipped-symbols notice: ${shown}`);
+  if (!/Not said/.test(shown) || !shown.includes("˥") || !shown.includes("˩")) errors.push(`[${tag}] typing IPA with tone letters showed no notice naming them: "${shown}"`);
+  await page.screenshot({ path: `${outDir}/${tag}-4-speak-skipped.png`, fullPage: true });
+  await box_.fill("ˈhɛloʊ");
+  if (await noticeText()) errors.push(`[${tag}] the notice stayed for IPA the voice says: ${await noticeText()}`);
+  await box_.fill("ɕiɛ˥˩");
+  await box_.fill("");
+  if (await noticeText()) errors.push(`[${tag}] clearing the box left the notice: ${await noticeText()}`);
+  await box_.fill("ɕiɛ˥˩");
+  await ipaChip.click(); // and off
+  if (await noticeText()) errors.push(`[${tag}] turning IPA mode off left the notice: ${await noticeText()}`);
   // sing mode: a key sings the marked syllable and moves the cursor; legato; a demo song
   await page.getByRole("radio", { name: "Sing" }).click();
   await page.waitForTimeout(600);
@@ -131,12 +167,19 @@ async function run(viewport: { width: number; height: number }, tag: string) {
   if (!(singing > 0.01)) errors.push(`[${tag}] a sung key made no sound (${singing})`);
   if (!(after < 1e-3)) errors.push(`[${tag}] voice still sounding after the sung notes: ${after}`);
   if (sylBefore === sylAfter) errors.push(`[${tag}] the syllable cursor did not move (${sylBefore})`);
-  await page.getByRole("button", { name: "Made of air" }).click();
+  // a menu isn't an instrument: a letter typed in it picks an entry, it doesn't play a note
+  await page.getByRole("combobox", { name: "Song" }).focus();
+  await page.keyboard.down("d");
+  const menuNotes = await page.locator(".keys .key.down").count();
+  await page.keyboard.up("d");
+  if (menuNotes) errors.push(`[${tag}] a key typed in the song menu played a note`);
+  await page.getByRole("combobox", { name: "Song" }).selectOption("Made of air");
+  await page.getByRole("button", { name: /^Sing$/ }).click();
   await page.waitForTimeout(2200);
   const demoRms = await rms();
   const demoNow = await page.locator(".syl.now").textContent().catch(() => null);
   await page.screenshot({ path: `${outDir}/${tag}-5-sing.png`, fullPage: tag !== "desktop" });
-  await page.getByRole("button", { name: /^Stop “Made of air”$/ }).click();
+  await page.getByRole("button", { name: /^Stop$/ }).click();
   await page.waitForTimeout(700);
   const demoStopped = await rms();
   logs.push(`[${tag}] sing demo: rms ${demoRms.toFixed(4)} on "${demoNow}", after stop ${demoStopped.toFixed(4)}`);
@@ -149,7 +192,7 @@ async function run(viewport: { width: number; height: number }, tag: string) {
   for (const [i, name] of names.entries()) {
     await page.locator(".specimen").nth(i).click();
     await page.waitForTimeout(250);
-    await page.locator(".call").first().click();
+    await page.locator(".act-call").first().click();
     await page.waitForTimeout(1300);
     const slug = name.toLowerCase().replace(/[^a-z]+/g, "-");
     if (tag === "desktop" || i === 0) await page.screenshot({ path: `${outDir}/${tag}-5-${slug}.png`, fullPage: tag !== "desktop" });
@@ -161,6 +204,20 @@ async function run(viewport: { width: number; height: number }, tag: string) {
     });
     logs.push(`[${tag}] creature ${name}: ${JSON.stringify(state)}`);
   }
+  // the sounding call's button reads Stop, and stops it (start one if the last has ended)
+  const stop = page.getByRole("button", { name: /^Stop$/ });
+  if (!(await stop.count())) {
+    await page.locator(".act-call").first().click();
+    await page.waitForTimeout(500);
+  }
+  await stop.click();
+  await page.waitForTimeout(400);
+  const callAfterStop = await page.evaluate(() => {
+    // @ts-expect-error debug handle
+    return window.__chimeraEngine?.latestCreature?.t?.call ?? null;
+  });
+  logs.push(`[${tag}] creature call after Stop: ${callAfterStop}`);
+  if (callAfterStop !== null) errors.push(`[${tag}] the call kept sounding after Stop (${callAfterStop})`);
   await page.keyboard.down("g");
   await page.waitForTimeout(600);
   const held = await page.evaluate(() => {
@@ -173,8 +230,8 @@ async function run(viewport: { width: number; height: number }, tag: string) {
   // beatbox: preset, play, playhead + level from telemetry, a pad, stop
   await page.getByRole("radio", { name: "Beatbox" }).click();
   await page.waitForTimeout(300);
-  await page.getByRole("button", { name: "Breakbeat" }).click();
-  await page.getByRole("button", { name: "Play beat" }).click();
+  await page.getByRole("combobox", { name: "Pattern" }).selectOption("Breakbeat");
+  await page.getByRole("button", { name: /^Play beat$/ }).click();
   const beatSamples: { step: number; rms: number }[] = [];
   for (let i = 0; i < 8; i++) {
     await page.waitForTimeout(250);
@@ -190,8 +247,18 @@ async function run(viewport: { width: number; height: number }, tag: string) {
   logs.push(`[${tag}] beatbox steps ${beatSamples.map((b) => b.step).join(",")} rms ${beatSamples.map((b) => b.rms.toFixed(3)).join(",")}`);
   await page.locator(".pad").first().dispatchEvent("pointerdown");
   await page.waitForTimeout(300);
-  await page.getByRole("button", { name: "Stop" }).click();
+  await page.getByRole("button", { name: /^Stop$/ }).click();
   await page.waitForTimeout(300);
+  // Space presses the tab's main button (here: the beat on, then off), unless typing
+  await page.locator("body").click({ position: { x: 2, y: 2 } });
+  await page.keyboard.press("Space");
+  await page.waitForTimeout(700);
+  const spaceOn = await page.getByRole("button", { name: /^Stop$/ }).count();
+  await page.keyboard.press("Space");
+  await page.waitForTimeout(300);
+  const spaceOff = await page.getByRole("button", { name: /^Play beat$/ }).count();
+  logs.push(`[${tag}] beatbox space: playing ${spaceOn}, stopped ${spaceOff}`);
+  if (spaceOn !== 1 || spaceOff !== 1) errors.push(`[${tag}] Space didn't start and stop the beat (${spaceOn}, ${spaceOff})`);
   // back to the human voice
   await page.getByRole("radio", { name: "Play" }).click();
   await page.waitForTimeout(600);
@@ -201,6 +268,37 @@ async function run(viewport: { width: number; height: number }, tag: string) {
     return { human: !!e?.latest, creature: !!e?.latestCreature };
   });
   logs.push(`[${tag}] back to play: ${JSON.stringify(human)}`);
+  await page.close();
+}
+
+// a start that failed (the worklet didn't load) can be retried from the same button: the retry
+// builds the audio again instead of resuming the empty context and reporting success
+{
+  const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+  page.on("pageerror", (e) => errors.push(`[retry] pageerror: ${e.message}`));
+  // the worklet's fetch isn't the page's (route() never sees it): fail the first addModule instead
+  await page.addInitScript(() => {
+    const add = AudioWorklet.prototype.addModule;
+    let calls = 0;
+    AudioWorklet.prototype.addModule = function (this: AudioWorklet, ...a: Parameters<typeof add>) {
+      (window as unknown as { __worklets: number }).__worklets = ++calls;
+      return calls === 1 ? Promise.reject(new Error("worklet blocked by the test")) : add.apply(this, a);
+    };
+  });
+  await page.goto(url, { waitUntil: "networkidle" });
+  await page.getByRole("radio", { name: "Play" }).click();
+  await page.getByRole("button", { name: /^Breathe$/ }).click();
+  const failed = await page.getByText(/Audio could not start/).waitFor({ timeout: 10000 }).then(() => true, () => false);
+  await page.getByRole("button", { name: /^Breathe$/ }).click();
+  await page.waitForTimeout(1500);
+  const running = await page.evaluate(() => {
+    // @ts-expect-error debug handle
+    return !!window.__chimeraEngine?.latest;
+  });
+  const worklets = await page.evaluate(() => (window as unknown as { __worklets?: number }).__worklets ?? 0);
+  logs.push(`[retry] first start failed: ${failed}, worklet requests ${worklets}, running after retry: ${running}`);
+  if (!failed) errors.push("[retry] blocking the worklet didn't make the first start fail");
+  if (!running) errors.push(`[retry] the retry after a failed start didn't start the audio (${worklets} worklet requests)`);
   await page.close();
 }
 
@@ -237,7 +335,7 @@ async function run(viewport: { width: number; height: number }, tag: string) {
   });
   await page.goto(url, { waitUntil: "networkidle" });
   await page.getByRole("radio", { name: "Play" }).click();
-  await page.getByRole("button", { name: /breathe in and start/i }).click();
+  await page.getByRole("button", { name: /^Breathe$/ }).click();
   await page.waitForTimeout(1500);
   const rate = await page.evaluate(() => {
     // @ts-expect-error debug handle
@@ -252,6 +350,6 @@ await run({ width: 1440, height: 980 }, "desktop");
 await run({ width: 390, height: 844 }, "mobile");
 await browser.close();
 console.log("console errors:", errors.length ? "\n" + errors.join("\n") : "none");
-console.log(logs.filter((l) => /load|rate|warn|transcription|creature|held|back to|beatbox|silence|sing|octave/i.test(l)).slice(0, 40).join("\n"));
+console.log(logs.filter((l) => /load|rate|warn|transcription|example|creature|held|back to|beatbox|silence|sing|octave|retry/i.test(l)).slice(0, 52).join("\n"));
 // a run that collected errors fails, so CI and agents can't read it as a pass
 if (errors.length) process.exit(1);

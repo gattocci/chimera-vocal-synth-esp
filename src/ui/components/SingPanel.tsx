@@ -1,9 +1,11 @@
-import { useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useStore } from "../store.ts";
 import { useSing, playDemo, stopSinging, soundingSyllable, sungNow, DEMO_SONGS, ensureDictionary } from "../singing.ts";
 import { mouthWords } from "../mouthWords.ts";
 import { V } from "../colors.ts";
-import { Keys } from "./Keys.tsx";
+import { Keys, MidiButton } from "./Keys.tsx";
+import { ActionBar, PrimaryButton } from "./ActionBar.tsx";
+import { Menu } from "./Controls.tsx";
 import { PianoRoll } from "./PianoRoll.tsx";
 import { SpectrumView } from "./SpectrumView.tsx";
 import { Chip, Screen } from "./Screen.tsx";
@@ -113,32 +115,54 @@ function SongControls() {
   );
 }
 
-function DemoSongs() {
-  const body = useStore((s) => s.body);
+/**
+ * Sing's main button: sing the chosen song (its own words), or stop it. A song getting ready
+ * (audio starting, the dictionary loading) counts as playing: Stop cancels it, and choosing
+ * another song replaces it.
+ */
+function SingActions() {
   const start = useStore((s) => s.start);
   const demo = useSing((s) => s.demo);
+  const [song, setSong] = useState(DEMO_SONGS[0].name);
+  const [pending, setPending] = useState(false);
+  const request = useRef(0);
+  // the audio must be running: if it failed to start, nothing is planned and the error shows
+  const ready = async () => {
+    await start();
+    if (!useStore.getState().started) throw new Error("no audio");
+  };
+  // playDemo waits for `ready` itself, so a stop meanwhile (body, mode, another song) cancels it
+  const sing = (name: string) => {
+    const n = ++request.current;
+    setPending(true);
+    playDemo(name, useStore.getState().body, ready)
+      .catch(() => {})
+      .finally(() => request.current === n && setPending(false));
+  };
+  const stop = () => {
+    request.current++; // the song getting ready, if any, no longer counts
+    setPending(false);
+    stopSinging();
+  };
+  const press = () => (demo || pending ? stop() : sing(song));
   return (
-    <div className="demo-songs" role="group" aria-label={t("Demo songs")}>
-      {DEMO_SONGS.map((s) => (
-        <Chip
-          key={s.name}
-          on={demo === s.name}
-          onClick={async () => {
-            if (demo === s.name) {
-              stopSinging();
-              return;
-            }
-            await playDemo(s.name, body, start);
-          }}
-        >
-          {demo === s.name ? `${t("Stop")} “${s.name}”` : s.name}
-        </Chip>
-      ))}
-    </div>
+    <ActionBar label={t("Song")} onSpace={press}>
+      <PrimaryButton label={t("Sing")} playing={!!demo || pending} onClick={press} />
+      <Menu
+        label={t("Song")}
+        icon="note"
+        value={demo ?? song}
+        options={DEMO_SONGS.map((s) => ({ value: s.name, label: s.name }))}
+        onChange={(name) => {
+          setSong(name);
+          if (demo || pending) sing(name);
+        }}
+      />
+    </ActionBar>
   );
 }
 
-/** Sing mode's right column: the piano roll, the lyrics, the spectrum with the ring, the song voice, the keys. */
+/** Sing mode's right column: the song button, the pitch roll, the lyrics, the spectrum with the ring, the song voice, the keys. */
 export function SingRight() {
   // the pronouncing dictionary for the lyrics: here rather than on the mode switch, since the app
   // opens on Sing without one
@@ -147,10 +171,11 @@ export function SingRight() {
   const next = useSing((s) => (s.demo ? null : (s.syllables[s.cursor]?.text ?? null)));
   return (
     <div className="right right-sing">
-      <Screen className="s-roll" title={t("Piano roll")} sub={t("Notes and the pitch sung")}>
+      <SingActions />
+      <Screen className="s-roll" title={t("Pitch")}>
         <PianoRoll />
       </Screen>
-      <Screen className="s-lyrics" title={t("Lyrics")} sub={t("Each note sings the next syllable")} tools={<DemoSongs />}>
+      <Screen className="s-lyrics" title={t("Lyrics")}>
         <Lyrics />
       </Screen>
       <Screen className="s-spec" title={t("Spectrum")} sub={ring ? t("Ring on") : ""}>
@@ -159,7 +184,7 @@ export function SingRight() {
       <Screen className="s-voice" title={t("Voice")}>
         <SongControls />
       </Screen>
-      <Screen className="s-keys" title={t("Keys")} sub={next ? `${t("Next")}: ${next}` : ""}>
+      <Screen className="s-keys" title={t("Keys")} sub={next ? `${t("Next")}: ${next}` : ""} tools={<MidiButton />}>
         <Keys />
       </Screen>
     </div>

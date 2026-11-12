@@ -1,11 +1,13 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { skippedLines } from "../skipped.ts";
 import { useStore } from "../store.ts";
-import { speakText, speakPhrases, stopSpeaking, onPlan, currentPlan, spokenWordNow } from "../speech.ts";
+import { speakText, speakPhrases, stopSpeaking, onPlan, currentPlan, spokenWordNow, speakingNow } from "../speech.ts";
 import { mouthWords } from "../mouthWords.ts";
 import { tokenizeIpa, DIALECT_PRESETS, type DialectPreset } from "../../wasm/engine.ts";
 import { setVoiceLang, currentVoiceLang, type VoiceLang } from "../speech.ts";
-import { Slider, Toggle, Segmented } from "./Controls.tsx";
+import { Menu, Slider, Segmented } from "./Controls.tsx";
 import { Chip, Screen } from "./Screen.tsx";
+import { ActionBar, PrimaryButton } from "./ActionBar.tsx";
 import { ScoreView, planNow } from "./ScoreView.tsx";
 import { TubeView } from "./TubeView.tsx";
 import { Stroboscope } from "./Stroboscope.tsx";
@@ -115,7 +117,22 @@ function ConsonantChart(props: { onPad: (c: string) => void }) {
   );
 }
 
-/** Speak mode's right column: what to say, the gestural score, the consonant chart, the tube and folds. */
+/** Whether speech is sounding, polled each frame (re-renders only when it changes). */
+function useSpeaking(): boolean {
+  const [on, setOn] = useState(false);
+  useEffect(() => {
+    let raf = 0;
+    const loop = () => {
+      setOn(speakingNow());
+      raf = requestAnimationFrame(loop);
+    };
+    raf = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(raf);
+  }, []);
+  return on;
+}
+
+/** Speak mode's right column: the speak button, what to say, the gestural score, the consonant chart, the tube and folds. */
 export function SpeakRight() {
   const body = useStore((s) => s.body);
   const f0 = useStore((s) => s.source.f0);
@@ -129,7 +146,10 @@ export function SpeakRight() {
   // the page's voice language (English by default: nothing changes until it is switched)
   const [lang, setLang] = useState<VoiceLang>(currentVoiceLang());
   const [dialect, setDialect] = useState<DialectPreset>("neutro");
+  const speaking = useSpeaking();
   useEffect(() => onPlan((p) => setTrans(p?.transcription ?? "")), []);
+  // in IPA mode: the symbols in the box that the voice will not say, updated as the text changes
+  const skipped = useMemo(() => (ipa ? skippedLines(text) : []), [ipa, text]);
 
   const pickLang = (l: VoiceLang) => {
     setLang(l);
@@ -144,6 +164,8 @@ export function SpeakRight() {
     setBusy(true);
     try {
       await start();
+      // the audio didn't start (the error shows on the bar): speaking would only light Stop
+      if (!useStore.getState().started) return;
       await speakText(text, { ipa, body, rate, f0 });
     } finally {
       setBusy(false);
@@ -151,30 +173,43 @@ export function SpeakRight() {
   };
   const pad = async (c: string) => {
     await start();
+    if (!useStore.getState().started) return;
     speakPhrases([{ segments: tokenizeIpa(`ˈ${vowel}${c}${vowel}`), intonation: "flat" }], { body, rate, f0 });
   };
 
+  const press = () => (speaking ? stopSpeaking() : void speak());
+
   return (
     <div className="right right-speak">
-      <Screen
-        className="s-say"
-        title={t("Say")}
-        sub={t("Text to speech")}
-        tools={
-          <>
-            <Toggle label={t("Text is IPA")} checked={ipa} onChange={setIpa} />
-            <Segmented
-              label={t("Voice")}
-              value={lang}
-              options={[
-                { value: "en" as const, label: t("English") },
-                { value: "es" as const, label: t("Spanish") },
-              ]}
-              onChange={pickLang}
-            />
-          </>
-        }
-      >
+      <ActionBar label={t("Speak")} onSpace={press}>
+        <PrimaryButton label={t("Speak")} playing={speaking} busy={busy ? t("Preparing…") : null} onClick={press} />
+        {/* puts an example in the box: the menu always reads Examples, since the box shows the words */}
+        <Menu
+          label={t("Examples")}
+          value=""
+          options={[{ value: "", label: t("Examples"), disabled: true }, ...EXAMPLES.map((ex) => ({ value: ex, label: ex }))]}
+          onChange={(ex) => {
+            setText(ex);
+            setIpa(false);
+          }}
+        />
+        <div className="act-slider">
+          <Slider label={t("Rate")} value={rate} min={0.5} max={1.8} onChange={setRate} format={(v) => `${v.toFixed(2)}×`} />
+        </div>
+        <Chip on={ipa} onClick={() => setIpa(!ipa)}>
+          {t("Text is IPA")}
+        </Chip>
+        <Segmented
+          label={t("Voice")}
+          value={lang}
+          options={[
+            { value: "en" as const, label: t("English") },
+            { value: "es" as const, label: t("Spanish") },
+          ]}
+          onChange={pickLang}
+        />
+      </ActionBar>
+      <Screen className="s-say" label={t("What to say")}>
         <div className="say">
           <div className="say-row">
             <textarea
@@ -189,21 +224,19 @@ export function SpeakRight() {
               aria-label={ipa ? t("IPA to speak") : t("Text to speak")}
               placeholder={ipa ? t("Type IPA, for example ˈhɛloʊ") : t("Type something for the voice to say")}
             />
-            <div className="say-actions">
-              <button className="primary" onClick={() => void speak()} disabled={busy}>
-                {busy ? t("Preparing…") : t("Speak")}
-              </button>
-              <button className="ghost" onClick={stopSpeaking}>
-                {t("Stop")}
-              </button>
-            </div>
           </div>
           <div className="say-row">
-            <p className="transcription" aria-live="polite">
-              {trans ? `/${trans}/` : t("The transcription appears here.")}
-            </p>
-            <div className="say-rate">
-              <Slider label={t("Rate")} value={rate} min={0.5} max={1.8} onChange={setRate} format={(v) => `${v.toFixed(2)}×`} />
+            <div className="say-read">
+              <p className="transcription" aria-live="polite">
+                {trans ? `/${trans}/` : t("The transcription appears here.")}
+              </p>
+              <div className="say-skipped" aria-live="polite">
+                {skipped.map((l) => (
+                  <p key={l.what}>
+                    {l.what}: <span className="say-skipped-sym">{l.symbols.join(" ")}</span>
+                  </p>
+                ))}
+              </div>
             </div>
           </div>
           {lang === "es" && (
@@ -215,20 +248,6 @@ export function SpeakRight() {
               ))}
             </div>
           )}
-          <div className="examples" role="group" aria-label={t("Examples")}>
-            {EXAMPLES.map((ex) => (
-              <Chip
-                key={ex}
-                toggle={false}
-                onClick={() => {
-                  setText(ex);
-                  setIpa(false);
-                }}
-              >
-                {ex}
-              </Chip>
-            ))}
-          </div>
         </div>
       </Screen>
       <Screen className="s-score" title={t("Gestural score")}>

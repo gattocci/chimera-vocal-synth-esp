@@ -73,21 +73,3 @@ export function VoiceControls() {
   ];
   return <EncoderPages label={t("Voice")} pages={pages} />;
 }
-
-/** Hold breath and Whisper, for the voice screen's header. */
-export function VoiceToggles() {
-  const voiced = useStore((st) => st.source.voiced);
-  const setSource = useStore((st) => st.setSource);
-  const hold = useStore((st) => st.hold);
-  const setHold = useStore((st) => st.setHold);
-  return (
-    <>
-      <Chip on={hold} onClick={() => setHold(!hold)}>
-        {t("Hold breath")}
-      </Chip>
-      <Chip on={!voiced} onClick={() => setSource({ voiced: !voiced })}>
-        {t("Whisper")}
-      </Chip>
-    </>
-  );
-}

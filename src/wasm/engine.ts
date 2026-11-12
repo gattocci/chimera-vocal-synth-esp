@@ -8,7 +8,7 @@ import { call } from "./chimera.ts";
 import { CREATURE_VISUALS } from "../ui/creatureVisuals.ts";
 import type {
   ArticKey, ArticSpec, BeatPreset, BodyMix, BeatSound, BeatStep, CreatureDef, CreatureTelemetry, DemoSong, Gesture, HumanArtic, HumanBody,
-  HumanFrame, Phrase, Plan, Segment, SungNote, Syllable, VoiceSource, VowelRef,
+  HumanFrame, Phrase, Plan, Segment, SkippedIpa, SungNote, Syllable, VoiceSource, VowelRef,
 } from "./types.ts";
 
 export type * from "./types.ts";
@@ -77,6 +77,15 @@ export const DIALECT_PRESETS = {
   castellano: { seseo: false, ll: "jeismo", aspiratedS: false },
 } satisfies Record<string, Dialect>;
 export type DialectPreset = keyof typeof DIALECT_PRESETS;
+
+/**
+ * What `tokenizeIpa` leaves out of IPA text without a word, in input order, each item once: symbols
+ * the engine does not know, symbols it knows but has no sound for, and letters whose mark it
+ * cannot say (shown with the letter). Stress, length, spaces and the marks it reads are not listed.
+ */
+export function skippedIpa(text: string): SkippedIpa {
+  return call("skippedIpa", { text });
+}
 
 /**
  * Text → phonemes: English through CMUdict once loaded (fetched and gunzipped here, parsed by
