@@ -3,7 +3,7 @@
  * measures worklet load, and saves screenshots.
  * Usage: bun tools/e2e.ts [url] [outdir]
  */
-import { chromium } from "playwright-core";
+import { chromium, type Page } from "playwright-core";
 import { mkdirSync } from "node:fs";
 
 // `?lang=en`: the smoke test asserts on the English texts (the app opens in Spanish otherwise)
@@ -30,10 +30,12 @@ async function run(viewport: { width: number; height: number }, tag: string) {
   await page.screenshot({ path: `${outDir}/${tag}-0-idle.png` });
   // the app opens on Sing; this run starts in Play
   await page.getByRole("radio", { name: "Play" }).click();
-  // each tab's main button starts the audio: Play's breathes
-  const startBtn = page.getByRole("button", { name: /^Breathe$/ });
-  await startBtn.click();
-  await page.waitForTimeout(1800);
+  if (tag === "desktop") await grabTongueFirst(page, tag);
+  else {
+    // each tab's main button starts the audio: Play's breathes
+    await page.getByRole("button", { name: /^Breathe$/ }).click();
+    await page.waitForTimeout(1800);
+  }
   await page.screenshot({ path: `${outDir}/${tag}-1-running.png` });
   // drag the tongue body handle via the canvas: find it by probing (center-ish of viewport)
   const box = await page.locator(".anatomy canvas").boundingBox();
@@ -168,12 +170,12 @@ async function run(viewport: { width: number; height: number }, tag: string) {
   if (!(after < 1e-3)) errors.push(`[${tag}] voice still sounding after the sung notes: ${after}`);
   if (sylBefore === sylAfter) errors.push(`[${tag}] the syllable cursor did not move (${sylBefore})`);
   // a menu isn't an instrument: a letter typed in it picks an entry, it doesn't play a note
-  await page.getByRole("combobox", { name: "Song" }).focus();
+  await page.getByRole("combobox", { name: "Tune" }).focus();
   await page.keyboard.down("d");
   const menuNotes = await page.locator(".keys .key.down").count();
   await page.keyboard.up("d");
-  if (menuNotes) errors.push(`[${tag}] a key typed in the song menu played a note`);
-  await page.getByRole("combobox", { name: "Song" }).selectOption("Made of air");
+  if (menuNotes) errors.push(`[${tag}] a key typed in the tune menu played a note`);
+  await page.getByRole("combobox", { name: "Tune" }).selectOption({ label: "Dreamy" });
   await page.getByRole("button", { name: /^Sing$/ }).click();
   await page.waitForTimeout(2200);
   const demoRms = await rms();
@@ -182,9 +184,9 @@ async function run(viewport: { width: number; height: number }, tag: string) {
   await page.getByRole("button", { name: /^Stop$/ }).click();
   await page.waitForTimeout(700);
   const demoStopped = await rms();
-  logs.push(`[${tag}] sing demo: rms ${demoRms.toFixed(4)} on "${demoNow}", after stop ${demoStopped.toFixed(4)}`);
-  if (!(demoRms > 0.01) || !demoNow) errors.push(`[${tag}] demo song not singing (rms ${demoRms}, syllable ${demoNow})`);
-  if (!(demoStopped < 1e-3)) errors.push(`[${tag}] demo still sounding after stop: ${demoStopped}`);
+  logs.push(`[${tag}] sing a tune: rms ${demoRms.toFixed(4)} on "${demoNow}", after stop ${demoStopped.toFixed(4)}`);
+  if (!(demoRms > 0.01) || !demoNow) errors.push(`[${tag}] the tune is not singing the lyrics (rms ${demoRms}, syllable ${demoNow})`);
+  if (!(demoStopped < 1e-3)) errors.push(`[${tag}] the tune still sounding after stop: ${demoStopped}`);
   // bestiary: every creature, its first call, a key in held-voice mode, and the sustain toggle
   await page.getByRole("radio", { name: "Bestiary" }).click();
   await page.waitForTimeout(300);
@@ -346,10 +348,258 @@ async function run(viewport: { width: number; height: number }, tag: string) {
   await page.close();
 }
 
+// Sing's Record video: sings the lyrics to the tune again into a clip to save; the face screen leaves out
+// its readouts while it records
+{
+  const page = await browser.newPage({ viewport: { width: 390, height: 844 }, acceptDownloads: true });
+  page.on("console", (m) => m.type() === "error" && errors.push(`[video] ${m.text()}`));
+  page.on("pageerror", (e) => errors.push(`[video] pageerror: ${e.message}`));
+  await page.goto(url, { waitUntil: "networkidle" });
+  await page.locator(".lyrics textarea").fill("one two three");
+  await page.getByRole("combobox", { name: "Tune" }).selectOption({ label: "Playful" });
+  await page.getByRole("button", { name: /^Record video$/ }).click();
+  await page.getByRole("button", { name: /^Cancel$/ }).waitFor({ timeout: 10000 });
+  await page.waitForTimeout(800);
+  await page.screenshot({ path: `${outDir}/video-recording.png` });
+  const save = page.getByRole("link", { name: /^Save$/ });
+  const saved = await save.waitFor({ timeout: 20000 }).then(() => true, () => false);
+  if (!saved) errors.push("[video] Record video never offered a clip to save");
+  else {
+    const [dl] = await Promise.all([page.waitForEvent("download"), save.click()]);
+    const size = (await (await dl.createReadStream()).toArray()).reduce((n, b: Buffer) => n + b.length, 0);
+    logs.push(`[video] clip ${dl.suggestedFilename()}: ${size} bytes`);
+    if (size < 10000) errors.push(`[video] the clip is nearly empty (${size} bytes)`);
+  }
+  // the words and the tune come back on reload
+  await page.reload({ waitUntil: "networkidle" });
+  const words = await page.locator(".lyrics textarea").inputValue();
+  const tune = await page.getByRole("combobox", { name: "Tune" }).inputValue();
+  if (words !== "one two three" || tune !== "playful") errors.push(`[video] the song didn't come back on reload: "${words}" to ${tune}`);
+  await page.close();
+}
+
+// two taps on Record video while the audio is still starting make one clip: the first start gives way (it
+// used to leave a second recorder running that Cancel couldn't reach)
+{
+  const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+  page.on("pageerror", (e) => errors.push(`[video-twice] pageerror: ${e.message}`));
+  await page.addInitScript(() => {
+    const Rec = window.MediaRecorder;
+    const w = window as unknown as { __recorders: number };
+    w.__recorders = 0;
+    window.MediaRecorder = class extends Rec {
+      constructor(...a: ConstructorParameters<typeof Rec>) {
+        super(...a);
+        w.__recorders++;
+      }
+    };
+  });
+  await page.goto(url, { waitUntil: "networkidle" });
+  await page.locator(".lyrics textarea").fill("one two");
+  // both taps land before the first has started the audio (a second Playwright click would wait,
+  // and then find Cancel)
+  await page.evaluate(() => {
+    const b = [...document.querySelectorAll<HTMLButtonElement>(".action-bar button")].find((x) => x.textContent === "Record video")!;
+    b.click();
+    b.click();
+  });
+  await page.getByRole("link", { name: /^Save$/ }).waitFor({ timeout: 20000 }).catch(() => errors.push("[video-twice] no clip after two taps"));
+  const recorders = await page.evaluate(() => (window as unknown as { __recorders: number }).__recorders);
+  logs.push(`[video-twice] two taps on Record video: ${recorders} recorder(s)`);
+  if (recorders !== 1) errors.push(`[video-twice] two taps on Record video made ${recorders} recorders (want 1)`);
+  await page.close();
+}
+
+// Record video pressed while a song is singing: the clip starts once that song has died away (it
+// used to open on the stopped song's tail)
+{
+  const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+  page.on("pageerror", (e) => errors.push(`[video-tail] pageerror: ${e.message}`));
+  await page.addInitScript(() => {
+    const w = window as unknown as { __startLevel: number | null; __chimeraEngine?: { level(): number } };
+    w.__startLevel = null;
+    const start = MediaRecorder.prototype.start;
+    MediaRecorder.prototype.start = function (this: MediaRecorder, ...a: [number?]) {
+      w.__startLevel = w.__chimeraEngine?.level() ?? null;
+      return start.apply(this, a);
+    };
+  });
+  await page.goto(url, { waitUntil: "networkidle" });
+  await page.locator(".lyrics textarea").fill("one two three four five six seven eight");
+  await page.getByRole("button", { name: /^Sing$/ }).click();
+  await page.waitForTimeout(2500);
+  const singing = await page.evaluate(() => (window as unknown as { __chimeraEngine: { level(): number } }).__chimeraEngine.level());
+  await page.getByRole("button", { name: /^Record video$/ }).click();
+  await page.getByRole("button", { name: /^Cancel$/ }).waitFor({ timeout: 10000 });
+  const atStart = await page.evaluate(() => (window as unknown as { __startLevel: number | null }).__startLevel);
+  logs.push(`[video-tail] output rms while singing ${singing.toFixed(4)}, as the clip starts ${atStart?.toFixed(4)}`);
+  if (singing < 0.005) errors.push(`[video-tail] the song wasn't sounding when Record video was pressed (rms ${singing})`);
+  if (atStart === null || atStart >= 0.003) errors.push(`[video-tail] the clip started on the last song's tail (rms ${atStart})`);
+  await page.close();
+}
+
+// a recorder that fails partway (an encoder or resource failure): it lets go of the capture and the
+// face's measurements come back then, no clip is offered, and nothing throws unhandled (the clip used
+// to wait for the song's end, then reject, leaving its capture track running)
+{
+  const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+  page.on("pageerror", (e) => errors.push(`[video-breaks] pageerror: ${e.message}`));
+  await page.addInitScript(() => {
+    const w = window as unknown as { __unhandled: number; __tracks: MediaStreamTrack[]; __texts: string[] };
+    w.__unhandled = 0;
+    w.__tracks = [];
+    w.__texts = [];
+    window.addEventListener("unhandledrejection", () => w.__unhandled++);
+    const start = MediaRecorder.prototype.start;
+    MediaRecorder.prototype.start = function (this: MediaRecorder, ...a: [number?]) {
+      w.__tracks.push(...this.stream.getVideoTracks());
+      start.apply(this, a);
+      setTimeout(() => {
+        this.dispatchEvent(new Event("error"));
+        if (this.state !== "inactive") this.stop();
+      }, 800);
+    };
+    const fill = CanvasRenderingContext2D.prototype.fillText;
+    CanvasRenderingContext2D.prototype.fillText = function (this: CanvasRenderingContext2D, t: string, ...a: [number, number]) {
+      if (w.__texts.length < 5000) w.__texts.push(t);
+      return fill.call(this, t, ...a);
+    };
+  });
+  await page.goto(url, { waitUntil: "networkidle" });
+  await page.locator(".lyrics textarea").fill("one two three four five six seven eight nine ten");
+  await page.getByRole("button", { name: /^Record video$/ }).click();
+  await page.getByRole("button", { name: /^Cancel$/ }).waitFor({ timeout: 10000 });
+  await page.waitForTimeout(1500); // the recorder has failed; the song is still singing
+  await page.evaluate(() => ((window as unknown as { __texts: string[] }).__texts = []));
+  await page.waitForTimeout(500);
+  const mid = await page.evaluate(() => {
+    const w = window as unknown as { __tracks: MediaStreamTrack[]; __texts: string[] };
+    return { live: w.__tracks.filter((t) => t.readyState === "live").length, readouts: w.__texts.some((t) => /^RING O/.test(t)) };
+  });
+  await page.getByRole("button", { name: /^Record video$/ }).waitFor({ timeout: 30000 });
+  await page.waitForTimeout(500);
+  const save = await page.getByRole("link", { name: /^Save$/ }).count();
+  const unhandled = await page.evaluate(() => (window as unknown as { __unhandled: number }).__unhandled);
+  logs.push(`[video-breaks] recorder failed mid-song: capture tracks live ${mid.live}, readouts back ${mid.readouts}; after the song Save ${save}, unhandled rejections ${unhandled}`);
+  if (mid.live) errors.push(`[video-breaks] the capture kept running after the recorder failed (${mid.live} live track(s))`);
+  if (!mid.readouts) errors.push("[video-breaks] the face kept hiding its measurements after the recorder failed");
+  if (save) errors.push("[video-breaks] a failed recording was offered to save");
+  if (unhandled) errors.push(`[video-breaks] ${unhandled} unhandled rejection(s)`);
+  await page.close();
+}
+
+// switching 2D/3D while recording: the clip follows the face that's showing (it kept copying the
+// replaced canvas, so the video froze at the switch while the sound went on)
+{
+  const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+  page.on("pageerror", (e) => errors.push(`[video-3d] pageerror: ${e.message}`));
+  await page.addInitScript(() => {
+    const w = window as unknown as { __draws: boolean[] };
+    w.__draws = [];
+    const draw = CanvasRenderingContext2D.prototype.drawImage as (...a: unknown[]) => void;
+    CanvasRenderingContext2D.prototype.drawImage = function (this: CanvasRenderingContext2D, ...a: unknown[]) {
+      // the clip's frame is 720x1280: note whether what it copies is still on the page
+      if (this.canvas.width === 720 && this.canvas.height === 1280 && a[0] instanceof HTMLCanvasElement) w.__draws.push(a[0].isConnected);
+      return draw.apply(this, a);
+    } as typeof CanvasRenderingContext2D.prototype.drawImage;
+  });
+  await page.goto(url, { waitUntil: "networkidle" });
+  await page.locator(".lyrics textarea").fill("one two three four five six seven eight nine ten");
+  await page.getByRole("button", { name: /^Record video$/ }).click();
+  await page.getByRole("button", { name: /^Cancel$/ }).waitFor({ timeout: 10000 });
+  await page.waitForTimeout(500);
+  await page.getByRole("checkbox", { name: "3D" }).check();
+  await page.waitForTimeout(1000);
+  await page.evaluate(() => ((window as unknown as { __draws: boolean[] }).__draws = []));
+  await page.waitForTimeout(500);
+  const draws = await page.evaluate(() => (window as unknown as { __draws: boolean[] }).__draws);
+  const detached = draws.filter((c) => !c).length;
+  logs.push(`[video-3d] after switching to 3D mid-clip: ${draws.length} frames, ${detached} from a canvas no longer on the page`);
+  if (!draws.length) errors.push("[video-3d] the clip drew no frames after switching to 3D");
+  if (detached) errors.push(`[video-3d] the clip kept copying the replaced 2D canvas (${detached} of ${draws.length} frames)`);
+  await page.getByRole("button", { name: /^Cancel$/ }).click();
+  await page.close();
+}
+
+// a recorder that fails to start (a type the browser claims but can't record): no clip, the Sing
+// button comes back, and the face shows its readouts again (the clean view used to stay on)
+{
+  const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+  page.on("pageerror", (e) => errors.push(`[video-fails] pageerror: ${e.message}`));
+  await page.addInitScript(() => {
+    MediaRecorder.prototype.start = () => {
+      throw new Error("start refused by the test");
+    };
+    const w = window as unknown as { __texts: string[] };
+    w.__texts = [];
+    const fill = CanvasRenderingContext2D.prototype.fillText;
+    CanvasRenderingContext2D.prototype.fillText = function (this: CanvasRenderingContext2D, t: string, ...a: [number, number]) {
+      if (w.__texts.length < 5000) w.__texts.push(t);
+      return fill.call(this, t, ...a);
+    };
+  });
+  await page.goto(url, { waitUntil: "networkidle" });
+  await page.getByRole("button", { name: /^Record video$/ }).click();
+  await page.waitForTimeout(2500);
+  await page.evaluate(() => ((window as unknown as { __texts: string[] }).__texts = []));
+  await page.waitForTimeout(500);
+  const readouts = await page.evaluate(() => (window as unknown as { __texts: string[] }).__texts.some((t) => /^RING O/.test(t)));
+  const sing = await page.getByRole("button", { name: /^(Sing|Stop)$/ }).count();
+  logs.push(`[video-fails] after a recorder that won't start: readouts ${readouts}, Sing button ${sing}`);
+  if (!readouts) errors.push("[video-fails] the face kept hiding its readouts after a recording failed to start");
+  if (!sing) errors.push("[video-fails] the Sing button didn't come back after a recording failed to start");
+  await page.close();
+}
+
+/**
+ * Play before any audio (upstream issue 89): grabbing the tongue starts the audio and breathes, and
+ * the engine keeps the tongue in the mouth. Since 704ed2c took away the start overlay over the face,
+ * a drag before the audio existed moved only the drawing, up through the skull, in silence.
+ */
+async function grabTongueFirst(page: Page, tag: string) {
+  const box = (await page.locator(".anatomy canvas").boundingBox())!;
+  const anatomy = page.locator(".anatomy");
+  // the tongue handle, found by hovering a grid finer than its 22 px hit radius
+  const findTongue = async () => {
+    for (let y = box.y + 6; y < box.y + box.height; y += 16)
+      for (let x = box.x + 6; x < box.x + box.width; x += 16) {
+        await page.mouse.move(x, y);
+        if ((await anatomy.getAttribute("data-hover")) === "tongue") return { x, y };
+      }
+    return null;
+  };
+  const from = await findTongue();
+  if (!from) return void errors.push(`[${tag}] found no tongue handle on the face`);
+  const to = { x: from.x, y: box.y + 4 }; // above the skull
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down();
+  // heard with the tongue where it was: pressed to the palate it closes the mouth, and is silent
+  await page
+    .waitForFunction(() => {
+      // @ts-expect-error debug handle
+      const e = window.__chimeraEngine;
+      return e?.ctx?.state === "running" && (e?.latest?.t?.outRms ?? 0) > 0.01;
+    }, null, { timeout: 10000 })
+    .catch(() => {});
+  const sound = await page.evaluate(() => {
+    // @ts-expect-error debug handle
+    const e = window.__chimeraEngine;
+    return { ctx: e?.ctx?.state ?? null, rms: e?.latest?.t?.outRms ?? -1 };
+  });
+  await page.mouse.move(to.x, to.y, { steps: 15 });
+  await page.waitForTimeout(600);
+  await page.mouse.up();
+  const at = await findTongue();
+  logs.push(`[${tag}] tongue grabbed first: audio ${sound.ctx}, rms ${sound.rms.toFixed(4)}; handle ${JSON.stringify(from)} dragged to ${JSON.stringify(to)}, rests at ${JSON.stringify(at)}`);
+  if (sound.ctx !== "running" || !(sound.rms > 0.01)) errors.push(`[${tag}] grabbing the tongue before any audio made no sound (audio ${sound.ctx}, rms ${sound.rms})`);
+  // the palate is a couple of centimetres above the tongue: a third of the way to the top is out of the mouth
+  if (!at || at.y < to.y + (from.y - to.y) * 0.67) errors.push(`[${tag}] the tongue left the mouth: dragged from ${JSON.stringify(from)} to ${JSON.stringify(to)}, rests at ${JSON.stringify(at)}`);
+}
+
 await run({ width: 1440, height: 980 }, "desktop");
 await run({ width: 390, height: 844 }, "mobile");
 await browser.close();
 console.log("console errors:", errors.length ? "\n" + errors.join("\n") : "none");
-console.log(logs.filter((l) => /load|rate|warn|transcription|example|creature|held|back to|beatbox|silence|sing|octave|retry/i.test(l)).slice(0, 52).join("\n"));
+console.log(logs.filter((l) => /load|rate|warn|transcription|example|creature|held|back to|beatbox|silence|sing|octave|retry|tongue|song|video/i.test(l)).slice(0, 52).join("\n"));
 // a run that collected errors fails, so CI and agents can't read it as a pass
 if (errors.length) process.exit(1);

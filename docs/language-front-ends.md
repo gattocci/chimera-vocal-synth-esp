@@ -10,8 +10,7 @@ lyrics ──► router ──► FRONT END ──► syllables ──► BACK E
 ```
 
 **A front end is phonology; the back end is physics.** A front end decides what a word's sounds
-are: which phonemes, and whether and how long a stop aspirates. The back end realises whatever
-the syllables say and applies the selected language's defaults. English remains the default voice
+are: which phonemes, and whether and how long a stop aspirates. The back end realises the syllables produced by each front end. English remains the default voice
 language unless Speak is switched explicitly.
 
 This is the shared design for languages (#40), and the first steps of #32 live in it: the sounds
@@ -25,10 +24,10 @@ Korean and Mandarin need (`ɕ ʑ tɕ dʑ tʂ dʐ ɥ`, step 3) and aspiration as 
 | Latin | English | CMUdict (letter-to-sound until it loads) | `phonetics/english.rs`, `syllables.rs` |
 | Latin | Spanish | rule-based spelling-to-sound; no dictionary | `phonetics/spanish.rs`, `syllables.rs` |
 | Hangul | Korean | nothing: a block's letters are its sounds | `phonetics/korean.rs` |
-| Cyrillic | Russian | rule-based, with phrase context for vowel-less prepositions | `phonetics/russian.rs` |
+| Cyrillic | Russian | spelling rules; acute marks stress ([russian.md](russian.md)) | `phonetics/russian.rs` |
 
-The router (`read_lyrics` in `syllables.rs`) sends each word to the front end whose script it is
-in, so a line can mix them (`twinkle 빵야 star`). It also handles what every language shares:
+The router (`read_lyrics` in `syllables.rs`) uses the selected front end for Latin text and script
+for Hangul and Cyrillic. A line can mix English and Hangul. It also handles shared syntax:
 melisma marks (`-`, `~`), phrase punctuation and word ends.
 
 Characters no front end claims are skipped, as before: `Zürich` sings "Z rich". Nothing after them
@@ -99,7 +98,8 @@ by hand, or to sing a language that has no front end yet.
    `ɕ ʑ tɕ dʑ tʂ dʐ ɥ` were, and let `chimera calibrate consonants` set a fricative's constriction:
    it appends new entries and leaves existing ones alone.
 2. **Write the front end**: implement `FrontEnd` (which characters start and continue its words,
-   and word → syllables), then add it to the router's list in `lyrics_to_syllables`. A front end
+   and word → syllables; `word_after` also gets the word before, for words that lean on each
+   other, as a Russian preposition with no vowel does), then add it to the router's list in `lyrics_to_syllables`. A front end
    that needs data should load it like CMUdict: a gzipped file in `public/data/`, fetched only when
    the lyrics need it.
 3. **Say the phonology** in the syllables (aspiration and its length). Build `Syllable` and

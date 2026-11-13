@@ -13,8 +13,9 @@ for tests and the `chimera` CLI.
 2. **The web app is the primary surface**: anyone should be able to make songs in it without
    an LLM's help. Mobile is the likely next surface. The plugin (CLAP/VST3/AU) still ships, but
    it's secondary.
-3. **More realistic without losing what it is**: the robotic, primitive sound people like today
-   stays available, and every realism change is checked by ear against it.
+3. **As realistic as we can make it**: the main push is to see how close the simulation gets to
+   a real voice. The robotic, Vocaloid-like sound people like today stays playable as a preset
+   ([#93](https://github.com/jamesondh/chimera-vocal-synth/issues/93)).
 4. **Languages enter through one shared front-end design**, not one-off hacks. Each needs a
    native speaker's check and must leave English unchanged.
 5. **The design language (the vector display) is settled**; the look within it can still evolve.
@@ -25,15 +26,18 @@ for tests and the `chimera` CLI.
 
 - **Play**: drag the tongue, lips and jaw in a live cutaway of the head; vowel pad, encoders,
   computer keyboard and Web MIDI.
-- **Speak**: English text (CMUdict with a letter-to-sound fallback) or IPA, turned into
-  gestures and prosody, with the gestural score and a consonant chart on screen. In IPA mode a
-  notice under the box lists the symbols and marks the voice doesn't say (`chimera render speech`
-  prints the same as warnings).
-- **Sing**: a pitch roll with lyrics per note; consonants land before the beat. Lyrics can be
-  English, Spanish, or Korean (Hangul: one block per note, with Korean sound rules); each
-  language is a front end ([docs/language-front-ends.md](docs/language-front-ends.md)). Spanish
-  supports neutral Latin American, Rioplatense, and Castilian presets. The interface can be
-  switched between English and Spanish.
+- **Speak**: English text (CMUdict with a letter-to-sound fallback), Spanish text with dialect
+  presets, or IPA, turned into gestures and prosody. Spanish is selected explicitly because its
+  Latin script is shared with English. In IPA mode a notice lists the symbols the voice does not
+  say (`chimera render speech` prints the same as warnings).
+- **Sing**: type words and the **Sing** button sings them to a tune picked by its mood, each line
+  fitted to a phrase of it (Tempo and Key on the Voice screen); **Record video** sings it again into a
+  9:16 clip to share. The keys sing the same words a syllable at a time, legato or not, onto a
+  pitch roll; consonants land before the beat. Lyrics can be English, Spanish, Korean (Hangul: one
+  block per note, with Korean sound rules), or Russian; each language is a front end
+  ([docs/language-front-ends.md](docs/language-front-ends.md)). Spanish supports neutral Latin
+  American, Rioplatense, and Castilian presets. The interface can be switched between English and
+  Spanish, independently of the voice language.
 - **Beatbox**: pads and a step sequencer, every drum an articulatory gesture.
 - **Bestiary**: songbird (two-voice syrinx), seal, alligator and elephant.
 - **Duet** (`?show=<id>`): two 3D heads replay a pre-rendered song.
@@ -77,10 +81,11 @@ bun tools/musicxml-to-notes.ts score.mxl P1 --out p1.json   # a score's part →
   Song Dataset.
 - [docs/speech-comparison.md](docs/speech-comparison.md): scoring the speech against real
   speakers, phone by phone (the TSP speech database).
+- [docs/russian.md](docs/russian.md): how Russian text is read, and what is approximate.
 - [docs/hill-climb/](docs/hill-climb/): the rules and log for tuning the voice one measured
   step at a time.
 
-Agents: see [AGENTS.md](AGENTS.md).
+Contributing: see [CONTRIBUTING.md](CONTRIBUTING.md). Agents: see [AGENTS.md](AGENTS.md).
 
 ## License
 

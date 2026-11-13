@@ -13,6 +13,8 @@ and the CLI) under a React UI. See the README.
 - Commit small. The subject names what changed and the trap, in searchable words; the body gives
   the why, what you ruled out, what you ran (with numbers) and what you didn't test.
 - Keep each fixed bug's reproduction as a test.
+- PRs follow `CONTRIBUTING.md`: the body is written top-down, with evidence, and ends with the
+  model and harness that wrote it.
 - Code outranks this file: fix the file when they disagree. When something breaks unnoticed, add
   a rule here, with a check.
 
@@ -21,7 +23,7 @@ and the CLI) under a React UI. See the README.
 - `crates/chimera/`: the engine (no I/O). `crates/chimera-wasm/`: the browser's C ABI.
   `crates/chimera-cli/`: `chimera render | compare csd | compare tsp | diagnose | calibrate`.
 - `src/wasm/`: the UI's facade over the engine. `src/worklet/`: the AudioWorklet. `src/ui/`: React
-  and the canvas renderers.
+  and the canvas renderers. `src/song/`: Sing's tunes, fitting words to them, clip recording.
 - `tests/`: bun tests on the wasm build. `tools/`: e2e, layout lint, spectrogram, speech judges
   (`asr/` Whisper, `tsp/` the real speakers' data).
 - `docs/`: architecture, the engine contract (`rust-engine.md`), the UI look, the singer and

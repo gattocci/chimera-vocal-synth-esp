@@ -6,12 +6,13 @@
 //! English words come from the pronouncing dictionary (unreduced: sung function words keep full
 //! vowels), are split into syllables by the maximal-onset principle with English onset clusters,
 //! and the spelling is split to match for display ("twin-kle"). Hangul words go to
-//! [`super::korean`], one syllable per block. Typed hyphens force syllable breaks; a lone "-" (or
+//! [`super::korean`], one syllable per block, Cyrillic words to [`super::russian`]. Typed hyphens force syllable breaks; a lone "-" (or
 //! "~") holds the previous vowel onto the next note (melisma), as in vocaloid editors.
 
 use crate::anatomy::human::BodyMix;
 use super::english::js_is_space;
 use super::korean::Korean;
+use super::russian::Russian;
 use super::planner::is_vowel;
 use super::{Segment, Syllable};
 use serde::{Deserialize, Serialize};
@@ -68,12 +69,29 @@ pub fn syllabify_segments(segs: &[Segment]) -> Vec<SyllableParts> {
     syllabify_segments_lang(segs, Lang::English)
 }
 
-/// Split one word's segments into onset / nucleus / coda syllables.
+/// A consonant cluster that can start an English syllable.
+pub fn is_english_onset(cluster: &[Segment]) -> bool {
+    let cluster: String = cluster.iter().map(|s| s.ipa.as_str()).collect();
+    ONSETS_EN.contains(&cluster.as_str())
+}
+
+/// A consonant cluster that can start a Spanish syllable.
+pub fn is_spanish_onset(cluster: &[Segment]) -> bool {
+    let cluster: String = cluster.iter().map(|s| s.ipa.as_str()).collect();
+    ONSETS_ES.contains(&cluster.as_str())
+}
+
+/// Split one word's segments with the selected language's legal onset clusters.
 pub fn syllabify_segments_lang(segs: &[Segment], lang: Lang) -> Vec<SyllableParts> {
-    let onsets = match lang {
-        Lang::English => ONSETS_EN,
-        Lang::Spanish => ONSETS_ES,
+    let is_onset: fn(&[Segment]) -> bool = match lang {
+        Lang::English => is_english_onset,
+        Lang::Spanish => is_spanish_onset,
     };
+    syllabify_with(segs, is_onset)
+}
+
+/// Split segments by assigning the longest legal onset between two vowel nuclei.
+pub fn syllabify_with(segs: &[Segment], is_onset: impl Fn(&[Segment]) -> bool) -> Vec<SyllableParts> {
     let vi: Vec<usize> = segs.iter().enumerate().filter(|(_, s)| is_vowel(&s.ipa, BodyMix::MALE)).map(|(i, _)| i).collect();
     if vi.is_empty() {
         return Vec::new();
@@ -86,9 +104,8 @@ pub fn syllabify_segments_lang(segs: &[Segment], lang: Lang) -> Vec<SyllablePart
             // consonants between this vowel and the next: the longest legal onset goes right
             let between = &segs[v + 1..next];
             let mut k = 0;
-            for len in (1..=3.min(between.len())).rev() {
-                let cluster: String = between[between.len() - len..].iter().map(|s| s.ipa.as_str()).collect();
-                if onsets.contains(&cluster.as_str()) {
+            for len in (1..=between.len()).rev() {
+                if is_onset(&between[between.len() - len..]) {
                     k = len;
                     break;
                 }
@@ -259,6 +276,12 @@ pub trait FrontEnd {
     }
     /// One word → its syllables (the router marks the last as the word's end).
     fn word(&self, word: &str) -> Vec<Syllable>;
+    /// The same, knowing the word of this front end just before it in the phrase, for a language
+    /// whose words lean on each other (a Russian preposition with no vowel has no note of its
+    /// own: it returns no syllables and starts the next word's first one).
+    fn word_after(&self, word: &str, _prev: Option<&str>) -> Vec<Syllable> {
+        self.word(word)
+    }
 }
 
 /// English, through a [`WordSource`] (the pronouncing dictionary, or letter-to-sound rules).
@@ -361,9 +384,12 @@ fn lyric_tokens(text: &str, front_ends: &[&dyn FrontEnd]) -> Vec<Token> {
 /// front end claims (other scripts, symbols) are skipped.
 pub fn read_lyrics(text: &str, front_ends: &[&dyn FrontEnd]) -> Vec<Syllable> {
     let mut out: Vec<Syllable> = Vec::new();
+    // the word before this one and its front end, within a phrase
+    let mut prev: Option<(usize, String)> = None;
     for tok in lyric_tokens(&text.replace('’', "'"), front_ends) {
         match tok {
             Token::Mark(c) if is_lyric_punct(c) => {
+                prev = None;
                 if let Some(last) = out.last_mut() {
                     last.phrase_end = true;
                 }
@@ -375,22 +401,24 @@ pub fn read_lyrics(text: &str, front_ends: &[&dyn FrontEnd]) -> Vec<Syllable> {
                 }
             }
             Token::Word(k, w) => {
-                let mut syls = front_ends[k].word(&w);
+                let before = prev.as_ref().filter(|(pk, _)| *pk == k).map(|(_, p)| p.as_str());
+                let mut syls = front_ends[k].word_after(&w, before);
                 if let Some(last) = syls.last_mut() {
                     last.word_end = true;
                 }
                 out.append(&mut syls);
+                prev = Some((k, w));
             }
         }
     }
     out
 }
 
-/// Lyrics text → syllables through the built-in front ends that need no data beyond the G2P: the
-/// G2P's language claims its own words, and Hangul goes to [`super::korean`].
+/// Lyrics text to syllables through the built-in front ends. Latin text follows the selected G2P;
+/// Hangul and Cyrillic are routed to their script-specific front ends.
 pub fn lyrics_to_syllables(text: &str, g2p: &impl WordSource) -> Vec<Syllable> {
     match g2p.lang() {
-        Lang::Spanish => read_lyrics(text, &[&Spanish(g2p), &Korean]),
-        Lang::English => read_lyrics(text, &[&English(g2p), &Korean]),
+        Lang::Spanish => read_lyrics(text, &[&Spanish(g2p), &Korean, &Russian]),
+        Lang::English => read_lyrics(text, &[&English(g2p), &Korean, &Russian]),
     }
 }

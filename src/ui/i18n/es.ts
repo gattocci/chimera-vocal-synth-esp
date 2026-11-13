@@ -466,4 +466,15 @@ export const ES: Record<string, string> = {
     "Función de área del tubo simulado, iluminada por la presión sonora",
   "Vocal folds seen from above, replayed slowly, with the glottal area and flow":
     "Cuerdas vocales vistas desde arriba, repetidas a cámara lenta, con el área y el flujo glotales",
+  Tune: "Melodía",
+  "Tonal key": "Tonalidad",
+  semitones: "semitonos",
+  Ring: "Anillo vocal",
+  "Recording…": "Grabando…",
+  "Record video": "Grabar vídeo",
+  "Sing it again and record the face into a video": "Canta de nuevo y graba la cabeza en vídeo",
+  Cancel: "Cancelar",
+  Share: "Compartir",
+  Save: "Guardar",
+  "Sing sings these words to the tune, one line per phrase. Each key sings the next syllable; hold keys for legato. A lone dash holds a vowel; hyphens split a word.": "Canta estas palabras con la melod?a, una l?nea por frase. Cada tecla canta la s?laba siguiente; mant?n una tecla mientras pulsas otra para ligar las notas. Un guion aislado prolonga una vocal; los guiones dentro de una palabra separan s?labas.",
 };
