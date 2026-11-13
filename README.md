@@ -1,7 +1,7 @@
 # CHIMERA
 
-Este es un trabajo de traducción, 
-A physical-modeling voice synthesizer in the browser. Every sound comes from a simulated
+A physical-modeling voice synthesizer in the browser, with Spanish UI translations and a
+Spanish text-to-phoneme front end. Every sound comes from a simulated
 airway (lungs, vocal folds or syrinx, a branched vocal tract, lips, nose), not from samples.
 The engine is Rust, compiled to WebAssembly for an AudioWorklet; the same code runs natively
 for tests and the `chimera` CLI.
@@ -30,8 +30,10 @@ for tests and the `chimera` CLI.
   notice under the box lists the symbols and marks the voice doesn't say (`chimera render speech`
   prints the same as warnings).
 - **Sing**: a pitch roll with lyrics per note; consonants land before the beat. Lyrics can be
-  English or Korean (Hangul: one block per note, with Korean sound rules); each language is a
-  front end ([docs/language-front-ends.md](docs/language-front-ends.md)).
+  English, Spanish, or Korean (Hangul: one block per note, with Korean sound rules); each
+  language is a front end ([docs/language-front-ends.md](docs/language-front-ends.md)). Spanish
+  supports neutral Latin American, Rioplatense, and Castilian presets. The interface can be
+  switched between English and Spanish.
 - **Beatbox**: pads and a step sequencer, every drum an articulatory gesture.
 - **Bestiary**: songbird (two-voice syrinx), seal, alligator and elephant.
 - **Duet** (`?show=<id>`): two 3D heads replay a pre-rendered song.
