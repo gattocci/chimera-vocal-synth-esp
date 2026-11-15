@@ -3,8 +3,9 @@ import { skippedLines } from "../skipped.ts";
 import { useStore } from "../store.ts";
 import { speakText, speakPhrases, stopSpeaking, onPlan, currentPlan, spokenWordNow, speakingNow } from "../speech.ts";
 import { mouthWords } from "../mouthWords.ts";
-import { tokenizeIpa } from "../../wasm/engine.ts";
-import { Menu, Slider } from "./Controls.tsx";
+import { tokenizeIpa, DIALECT_PRESETS, type DialectPreset } from "../../wasm/engine.ts";
+import { setVoiceLang, currentVoiceLang, type VoiceLang } from "../speech.ts";
+import { Menu, Slider, Segmented } from "./Controls.tsx";
 import { Chip, Screen } from "./Screen.tsx";
 import { ActionBar, PrimaryButton } from "./ActionBar.tsx";
 import { ScoreView, planNow } from "./ScoreView.tsx";
@@ -14,6 +15,7 @@ import type { InfoFn, SlotsFn } from "./AnatomyView.tsx";
 import { V } from "../colors.ts";
 import { engine } from "../../audio/AudioEngine.ts";
 
+// the examples stay English on purpose: the engine speaks English (CMUdict + letter-to-sound)
 const EXAMPLES = ["Hello. Can you hear me?", "She sells sea shells by the sea shore.", "Every sound here is air moving through a throat.", "The quick brown fox jumps over the lazy dog."];
 
 // IPA pulmonic consonant chart (rows = manner, columns = place); empty cells are null
@@ -97,7 +99,7 @@ function ConsonantChart(props: { onPad: (c: string) => void }) {
                 <td key={i}>
                   {pair.map((sym, j) =>
                     sym ? (
-                      <button key={j} className={`ipa${sym === now ? " now" : ""}`} onClick={() => props.onPad(sym)} title={`Say it between two vowels`}>
+                      <button key={j} className={`ipa${sym === now ? " now" : ""}`} onClick={() => props.onPad(sym)} title="Say it between two vowels">
                         {sym}
                       </button>
                     ) : (
@@ -140,10 +142,22 @@ export function SpeakRight() {
   const [busy, setBusy] = useState(false);
   const [trans, setTrans] = useState(currentPlan()?.transcription ?? "");
   const [vowel, setVowel] = useState("ɑ");
+  // the page's voice language (English by default: nothing changes until it is switched)
+  const [lang, setLang] = useState<VoiceLang>(currentVoiceLang());
+  const [dialect, setDialect] = useState<DialectPreset>("neutro");
   const speaking = useSpeaking();
   useEffect(() => onPlan((p) => setTrans(p?.transcription ?? "")), []);
   // in IPA mode: the symbols in the box that the voice will not say, updated as the text changes
   const skipped = useMemo(() => (ipa ? skippedLines(text) : []), [ipa, text]);
+
+  const pickLang = (l: VoiceLang) => {
+    setLang(l);
+    setVoiceLang(l, l === "es" ? DIALECT_PRESETS[dialect] : undefined);
+  };
+  const pickDialect = (d: DialectPreset) => {
+    setDialect(d);
+    setVoiceLang("es", DIALECT_PRESETS[d]);
+  };
 
   const speak = async () => {
     setBusy(true);
@@ -184,6 +198,15 @@ export function SpeakRight() {
         <Chip on={ipa} onClick={() => setIpa(!ipa)}>
           Text is IPA
         </Chip>
+        <Segmented
+          label="Voice"
+          value={lang}
+          options={[
+            { value: "en" as const, label: "English" },
+            { value: "es" as const, label: "Spanish" },
+          ]}
+          onChange={pickLang}
+        />
       </ActionBar>
       <Screen className="s-say" label="What to say">
         <div className="say">
@@ -215,6 +238,15 @@ export function SpeakRight() {
               </div>
             </div>
           </div>
+          {lang === "es" && (
+            <div className="examples" role="group" aria-label="Dialect">
+              {(Object.keys(DIALECT_PRESETS) as DialectPreset[]).map((d) => (
+                <Chip key={d} on={dialect === d} onClick={() => pickDialect(d)}>
+                  {d === "neutro" ? "Neutro" : d === "rioplatense" ? "Rioplatense" : "Castellano"}
+                </Chip>
+              ))}
+            </div>
+          )}
         </div>
       </Screen>
       <Screen className="s-score" title="Gestural score">
