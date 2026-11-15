@@ -371,6 +371,7 @@ pub fn song(ctx: &Ctx, a: &[String]) -> Result<(), String> {
                         vibrato: 35.0,
                         tag,
                         legato_from,
+                        lang: None,
                     },
                 ));
                 v.schedule(&gs);
@@ -383,7 +384,7 @@ pub fn song(ctx: &Ctx, a: &[String]) -> Result<(), String> {
             } else if let Some(h) = held.take_if(|h| h.midi == m) {
                 v.release(h.tag);
                 v.release(h.tag + 1.0);
-                let gs = shift(plan_note_off(&h.syl, h.midi, body_name.into()));
+                let gs = shift(plan_note_off(&h.syl, h.midi, body_name.into(), None));
                 v.schedule(&gs);
             }
         }

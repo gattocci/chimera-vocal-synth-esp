@@ -7,6 +7,7 @@
 
 use super::durations::{SegInfo, klatt_durations};
 use super::inventory::{Glottal, Manner, PhonemeDef, Voicing, dental_closure, phoneme};
+use super::syllables::Lang;
 use super::{Intonation, Plan, PlannedSegment, Segment};
 use crate::anatomy::human::{ArticKey, ArticPatch, BodyMix, BodyName};
 use crate::control::score::{ControlKey, Gesture, Targets};
@@ -78,6 +79,14 @@ pub fn expand(ipa: &str) -> Option<&'static [&'static str]> {
         "ɔɪ" => &["ɔ", "ɪ"],
         "eɪ" => &["e", "i"],
         "oʊ" => &["o", "u"],
+        // Spanish falling diphthongs (real offglides [i u], as Spanish requires)
+        "ai" => &["a", "i"],
+        "au" => &["a", "u"],
+        "ei" => &["e", "i"],
+        "oi" => &["o", "i"],
+        "eu" => &["e", "u"],
+        "ou" => &["o", "u"],
+        "ui" => &["u", "i"],
         "ɚ" => &["ɝ"],
         // rising diphthongs: a short close glide into the main vowel (Mandarin's medials: 话 ua,
         // 天 iɛ, 学 yɛ), written as one nucleus so the glide sings on the beat, inside the note
@@ -232,6 +241,10 @@ pub struct PlanOptions {
     /// fit short notes. Speech and live notes leave it unset.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sung: Option<bool>,
+    /// which language's phonation the utterance follows. English (the default) aspirates
+    /// syllable-initial voiceless stops; Spanish never does.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lang: Option<Lang>,
 }
 
 /// JS truthiness of an optional number (`if (s.f0)`: 0 and NaN are false).
@@ -327,7 +340,7 @@ pub fn plan_utterance(input: &[Segment], o: &PlanOptions) -> Plan {
         }
         let d = phoneme(&s.ipa, body);
         SegInfo { vowel: false, manner: d.map(|d| d.manner), voiced: Some(d.is_some_and(|d| d.voicing == Voicing::Voiced)), dur: d.map(|d| d.dur) }
-    });
+    }, o.lang);
     // expand diphthongs into two vowel targets sharing the duration
     let mut segs: Vec<Seg> = Vec::with_capacity(input.len() + 4);
     for (si, s) in input.iter().enumerate() {
@@ -515,9 +528,12 @@ pub fn plan_utterance(input: &[Segment], o: &PlanOptions) -> Plan {
                 voiced_again = g.end();
                 gestures.push(g);
             } else if def.manner == Manner::Stop || def.manner == Manner::Affricate {
-                // as the front end says; by default English's rule: aspirated when syllable-initial
-                // before a vowel and not after /s/
-                let aspirated = s.aspirated.unwrap_or_else(|| next_vowel && !prev_seg.is_some_and(|p| p.ipa == "s"));
+                // as the front end says; otherwise the language's rule — Spanish voiceless stops
+                // are never aspirated, and English stops are when syllable-initial before a vowel
+                // and not after /s/
+                let aspirated = s.aspirated.unwrap_or_else(|| {
+                    o.lang != Some(Lang::Spanish) && next_vowel && !prev_seg.is_some_and(|p| p.ipa == "s")
+                });
                 // the folds stay apart past the release by 40% of the default 50 ms (the ramps
                 // make up the rest of the aspiration); a front end's longer or shorter `vot` moves
                 // that by the whole difference, so the voice onset time it asks for is what it gets

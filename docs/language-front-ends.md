@@ -15,7 +15,8 @@ lyrics ──► router ──► FRONT END ──► syllables ──► BACK E
 **A front end is phonology; the back end is physics.** A front end decides what a word's sounds
 are: which phonemes, whether and how long a stop aspirates, how a tone bends the pitch. The back
 end realises whatever the syllables say and knows no language's rules. When a front end says
-nothing, the planner keeps English's defaults, which is why English output doesn't change.
+nothing, the planner keeps English's defaults, which is why English output doesn't change. English
+stays the voice language until Speak picks another (Spanish, today).
 
 This is the shared design for languages (#40), and the first steps of #32 live in it: the sounds
 Korean and Mandarin need (`ɕ ʑ tɕ dʑ tʂ dʐ ɥ`, step 3), aspiration as the front end's call
@@ -26,13 +27,15 @@ Korean and Mandarin need (`ɕ ʑ tɕ dʑ tʂ dʐ ɥ`, step 3), aspiration as the
 | Script | Front end | Needs | Where |
 |---|---|---|---|
 | Latin | English | CMUdict (letter-to-sound until it loads) | `phonetics/english.rs`, `syllables.rs` |
+| Latin | Spanish | rule-based spelling-to-sound; no dictionary | `phonetics/spanish.rs`, `syllables.rs` |
 | Hangul | Korean | nothing: a block's letters are its sounds | `phonetics/korean.rs` |
 | Cyrillic | Russian | nothing: spelling rules, stress marked with an acute ([russian.md](russian.md)) | `phonetics/russian.rs` |
 | Han | Mandarin | `public/data/mandarin.txt.gz` (208 KB, fetched when lyrics have Han characters) | `phonetics/mandarin.rs` |
 | Latin with tones | Mandarin as pinyin | nothing (checked against Mandarin's 411 syllables) | `phonetics/mandarin.rs` (`Pinyin`) |
 
 The router (`read_lyrics` in `syllables.rs`) sends each word to the front end whose script it is
-in, so a line can mix them (`我爱你 hello 빵야 nǐhǎo`). It also handles what every language
+in, so a line can mix them (`我爱你 hello 빵야 nǐhǎo`); Latin-script words go to the selected one
+(English by default, Spanish when Speak picks it). It also handles what every language
 shares: melisma marks (`-`, `~`), phrase punctuation (ASCII and full-width `，。！？`) and word ends.
 
 Pinyin and English share the Latin alphabet, so a front end may **decline** a word it scanned
@@ -43,6 +46,18 @@ them is lost.
 
 `chimera syllables "<lyrics>"` prints what the front ends read, one JSON syllable per sung note:
 the quickest way to check a front end.
+
+## Spanish
+
+Spanish text uses spelling rules, written accents for stress, and shared Spanish syllabification; it needs no dictionary. In Speak, choose Spanish and one of three dialect presets:
+
+| Preset | Main choices |
+|---|---|
+| Neutro | seseo, yeísmo, coda /s/ retained (default) |
+| Rioplatense | seseo, sheísmo, coda /s/ aspirated |
+| Castellano | /s/ and /θ/ distinction, yeísmo, coda /s/ retained |
+
+Number words are not expanded yet. Spanish lyrics use the same syllable planner as speech.
 
 ## Korean
 
@@ -300,10 +315,11 @@ in for a native listener; the test says where to look and whether a change moved
 
 ## Not yet
 
-- **A language choice.** Routing by script can't tell Turkish or German from English, or Cantonese
-  and Japanese from Mandarin, so Latin text is English unless it is toned pinyin, and Han
-  characters are Mandarin. A per-song language setting (Auto by default, today's order) comes next,
-  built on the one front-end list (#40).
+- **A per-song language choice.** Routing by script can't tell Turkish or German from English, or
+  Cantonese and Japanese from Mandarin, so Latin text is English unless it is toned pinyin, and Han
+  characters are Mandarin. Spanish is chosen explicitly in Speak for now, and English stays the
+  default; a per-song setting (Auto by default, today's order) comes next, built on the one
+  front-end list (#40).
 - **Bends on live notes:** a key pressed in Sing or a note from the plugin (`plan_note_on`) sings
   the note's pitch.
 - **Tones in speech:** Speak doesn't read Mandarin yet; the tones' contours and speech tuning come
