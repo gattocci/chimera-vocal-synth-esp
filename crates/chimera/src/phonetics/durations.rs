@@ -7,7 +7,6 @@
 
 use super::Segment;
 use super::inventory::Manner;
-use super::syllables::Lang;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -88,11 +87,13 @@ pub struct SegInfo {
     /// fallback inherent duration (s) for phonemes outside the table
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dur: Option<f64>,
+    /// the segment's aspiration as its front end decided it (None: the planner's English default)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub aspirated: Option<bool>,
 }
 
-/// Durations (s) for one phrase of segments (explicit `dur` values are kept). `lang` gates the
-/// English-only rules (the aspiration compensation below); unset means English.
-pub fn klatt_durations(segs: &[Segment], info: impl Fn(&Segment) -> SegInfo, lang: Option<Lang>) -> Vec<f64> {
+/// Durations (s) for one phrase of segments (explicit `dur` values are kept).
+pub fn klatt_durations(segs: &[Segment], info: impl Fn(&Segment) -> SegInfo) -> Vec<f64> {
     let n = segs.len();
     let inf: Vec<SegInfo> = segs.iter().map(info).collect();
     // words: index ranges split after wordEnd
@@ -175,9 +176,10 @@ pub fn klatt_durations(segs: &[Segment], info: impl Fn(&Segment) -> SegInfo, lan
                 }
                 let mut d = min + (inh - min) * p;
                 // aspiration after a voiceless stop eats into a stressed vowel's onset: give it
-                // back (English only; Spanish stops are unaspirated, so there is nothing to repay)
+                // back — keyed on whether that stop is aspirated (a Spanish one, unaspirated,
+                // takes nothing from the vowel, so there is nothing to repay)
                 let pv = if i > 0 { Some(inf[i - 1]) } else { None };
-                if lang != Some(Lang::Spanish) && stress > 0 && pv.is_some_and(|pv| pv.manner == Some(Manner::Stop) && pv.voiced != Some(true)) {
+                if stress > 0 && pv.is_some_and(|pv| pv.manner == Some(Manner::Stop) && pv.voiced != Some(true) && pv.aspirated != Some(false)) {
                     d += 20.0;
                 }
                 return d / 1000.0;

@@ -134,7 +134,7 @@ fn is_spell_vowel_ci(c: u16) -> bool {
 /// pair is one diphthong ([pia-no], [ai-re], [ciu-dad]).
 fn split_es_vowel_runs(lower: &[u16], runs: &[[usize; 2]]) -> Vec<[usize; 2]> {
     let acc = |c: u16| matches!(c, 0xE1 | 0xE9 | 0xED | 0xF3 | 0xFA); // á é í ó ú
-    let weak = |c: u16| matches!(c, 0x69 | 0x75 | 0xED | 0xFA); // i u í ú
+    let weak = |c: u16| matches!(c, 0x69 | 0x75 | 0xED | 0xFA | 0xFC); // i u í ú ü
     let strong = |c: u16| matches!(c, 0x61 | 0x65 | 0x6F | 0xE1 | 0xE9 | 0xF3); // a e o á é ó
     let mut out = Vec::new();
     for &[s, e] in runs {

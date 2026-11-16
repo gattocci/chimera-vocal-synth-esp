@@ -9,7 +9,7 @@
  */
 import { create } from "zustand";
 import { engine } from "../audio/AudioEngine.ts";
-import { g2p, planLang } from "./speech.ts";
+import { g2p } from "./speech.ts";
 import { lyricsToSyllables, type Syllable } from "../wasm/engine.ts";
 import { planSong, planNoteOn, planNoteOff, planMelisma } from "../wasm/engine.ts";
 import { EXHALE_LABEL } from "../wasm/engine.ts";
@@ -218,7 +218,7 @@ function startNote(syl: Syllable, midi: number, velocity: number, body: BodyMix,
     engine.release(from.tag + 1);
     from.note.t1 = t;
   }
-  const gs: Gesture[] = planNoteOn(syl, midi, { body, vibrato: useSing.getState().vibrato, tag, legatoFrom: from ? { syl: from.syl, midi: from.midi } : undefined, lang: planLang() });
+  const gs: Gesture[] = planNoteOn(syl, midi, { body, vibrato: useSing.getState().vibrato, tag, legatoFrom: from ? { syl: from.syl, midi: from.midi } : undefined });
   const breath = breathFor(velocity);
   for (const g of gs) if (g.targets.breath !== undefined) g.targets = { ...g.targets, breath: g.targets.breath * breath };
   engine.scheduleGestures(gs);
@@ -264,7 +264,7 @@ export function singNoteOff(midi: number, body: BodyMix): void {
   // a melisma comes next: this vowel carries on there, and the coda waits for the chain's end
   const st = useSing.getState();
   if (st.syllables[st.cursor]?.melisma) return;
-  const gs = planNoteOff(s.syl, midi, body, planLang());
+  const gs = planNoteOff(s.syl, midi, body);
   if (!gs.length) return;
   const tag = nextTag;
   nextTag += 2;
@@ -352,7 +352,7 @@ export async function playTune(id: string, body: BodyMix, ready?: () => Promise<
   if (!notes.length) return false;
   const bpm = tune.bpm * st.tempo;
   const t0 = 0.35;
-  const plan = planSong(notes, { body, bpm, t0, vibrato: st.vibrato, lang: planLang() });
+  const plan = planSong(notes, { body, bpm, t0, vibrato: st.vibrato });
   hooks.onStart?.();
   const beat = 60 / bpm;
   let t = t0;

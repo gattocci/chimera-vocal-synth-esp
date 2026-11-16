@@ -268,7 +268,6 @@ pub fn song(ctx: &Ctx, a: &[String]) -> Result<(), String> {
                 bpm: song.bpm,
                 t0: 0.3,
                 vibrato: 35.0,
-                lang: None,
             },
         );
         v.schedule(&plan.gestures);
@@ -352,7 +351,6 @@ pub fn song(ctx: &Ctx, a: &[String]) -> Result<(), String> {
                         vibrato: 35.0,
                         tag,
                         legato_from,
-                        lang: None,
                     },
                 ));
                 v.schedule(&gs);
@@ -365,7 +363,7 @@ pub fn song(ctx: &Ctx, a: &[String]) -> Result<(), String> {
             } else if let Some(h) = held.take_if(|h| h.midi == m) {
                 v.release(h.tag);
                 v.release(h.tag + 1.0);
-                let gs = shift(plan_note_off(&h.syl, h.midi, body_name.into(), None));
+                let gs = shift(plan_note_off(&h.syl, h.midi, body_name.into()));
                 v.schedule(&gs);
             }
         }
@@ -559,7 +557,7 @@ pub fn notes(ctx: &Ctx, a: &[String]) -> Result<(), String> {
         if phrase.is_empty() {
             return;
         }
-        let plan = plan_song(phrase, &SongOptions { body: body_name.into(), bpm, t0: start, vibrato, lang: None });
+        let plan = plan_song(phrase, &SongOptions { body: body_name.into(), bpm, t0: start, vibrato });
         v.schedule(&plan.gestures);
         *end = js_max(*end, plan.end);
         phrase.clear();

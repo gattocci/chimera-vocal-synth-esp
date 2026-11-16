@@ -146,28 +146,40 @@ impl SpanishG2P {
         if clean.contains('-') {
             return clean.split('-').filter(|p| !p.is_empty()).flat_map(|p| self.word(p, false)).collect();
         }
-        // "muy" is the one stressed [uj]: the weak+weak rule (below) would glide it
-        if clean == "muy" {
-            return vec![Segment { ipa: "m".into(), stress: Some(0), ..Default::default() }, Segment { ipa: "ui".into(), stress: Some(1), ..Default::default() }];
+        let mut segs = if clean == "muy" {
+            // "muy" is the one stressed [uj]: the weak+weak rule (below) would glide it
+            vec![Segment { ipa: "m".into(), stress: Some(0), ..Default::default() }, Segment { ipa: "ui".into(), stress: Some(1), ..Default::default() }]
+        } else {
+            let mut pieces = scan(clean, &self.dialect);
+            merge_vowel_runs(&mut pieces);
+            let stress = pick_stress(clean, &pieces);
+            let mut nucleus = 0usize;
+            pieces
+                .into_iter()
+                .map(|p| {
+                    let (ipa, stress) = match p {
+                        Piece::C(c) => (c.to_string(), 0),
+                        Piece::V(v, accent) => {
+                            let s = stress.get(nucleus).copied().unwrap_or(0);
+                            nucleus += 1;
+                            (v.to_string(), if accent { 1 } else { s })
+                        }
+                    };
+                    // Spanish voiceless stops are never aspirated: the front end says so (see
+                    // docs/language-front-ends.md, "The one format"), the planner does the rest
+                    let aspirated = matches!(ipa.as_str(), "p" | "t" | "k" | "tʃ").then_some(false);
+                    Segment { ipa, stress: Some(stress), aspirated, ..Default::default() }
+                })
+                .collect()
+        };
+        // the word's own allophones (β ð ɣ, ŋ, the coda s) are part of its sounds: sung words
+        // get them too, before the syllables split (the phrase pass in `to_phrases` adds the
+        // cross-word ones on top)
+        if let Some(last) = segs.last_mut() {
+            last.word_end = Some(true);
         }
-        let mut pieces = scan(clean, &self.dialect);
-        merge_vowel_runs(&mut pieces);
-        let stress = pick_stress(clean, &pieces);
-        let mut nucleus = 0usize;
-        pieces
-            .into_iter()
-            .map(|p| {
-                let (ipa, stress) = match p {
-                    Piece::C(c) => (c.to_string(), 0),
-                    Piece::V(v, accent) => {
-                        let s = stress.get(nucleus).copied().unwrap_or(0);
-                        nucleus += 1;
-                        (v.to_string(), if accent { 1 } else { s })
-                    }
-                };
-                Segment { ipa, stress: Some(stress), ..Default::default() }
-            })
-            .collect()
+        apply_allophones(&self.dialect, &mut segs);
+        segs
     }
 }
 
@@ -460,14 +472,19 @@ fn voiced_consonant(ipa: &str) -> bool {
     matches!(ipa, "b" | "d" | "g" | "β" | "ð" | "ɣ" | "m" | "n" | "ɲ" | "l" | "r" | "ɾ" | "j" | "w" | "ʝ" | "ʃ" | "ʒ")
 }
 
-/// continuants after which a stop becomes a fricative ([ˈaɣwa], [ˈbeɾðe], [ˈalβa], [ˈdezðe])
+/// continuants after which a stop becomes a fricative ([ˈaɣwa], [ˈbeɾðe], [ˈalβa]) — /d/'s
+/// narrower set: after /l/ it stays a stop ([ˈkaldo], unlike [ˈalɣo])
 fn fricative_ctx(ipa: &str) -> bool {
     is_es_vowel(ipa) || matches!(ipa, "l" | "r" | "ɾ" | "z")
 }
 
+fn fricative_ctx_d(ipa: &str) -> bool {
+    is_es_vowel(ipa) || matches!(ipa, "r" | "ɾ" | "z")
+}
+
 /// Panhispanic allophones, in place:
 /// - /b d g/ are fricatives after a vowel or a continuant ([la βoka], [eɾ ðedo], [aɣwa]), stops
-///   after a pause or a nasal ([en boca], [tengo]);
+///   after a pause or a nasal ([en boca], [tengo]) — and /d/ after /l/ ([kaldo]);
 /// - /s/ voices before a voiced consonant ([ˈmizmo]); with `aspirated_s` the coda /s/ breathes;
 /// - /n/ velarises before k, g, x ([ˈbaŋko], [ˈaŋtʃo]).
 fn apply_allophones(d: &Dialect, segs: &mut [Segment]) {
@@ -479,7 +496,8 @@ fn apply_allophones(d: &Dialect, segs: &mut [Segment]) {
         let s = &mut segs[i];
         match s.ipa.as_str() {
             "b" | "d" | "g" => {
-                if prev.as_deref().is_some_and(fricative_ctx) {
+                let ctx = if s.ipa == "d" { fricative_ctx_d } else { fricative_ctx };
+                if prev.as_deref().is_some_and(ctx) {
                     s.ipa = match s.ipa.as_str() {
                         "b" => "β".into(),
                         "d" => "ð".into(),

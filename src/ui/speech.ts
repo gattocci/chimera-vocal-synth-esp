@@ -26,11 +26,6 @@ export function currentVoiceLang(): VoiceLang {
   return voiceLang;
 }
 
-/** the planner's language tag: English is the engine's default (left unset), so only Spanish is sent */
-export function planLang(): "english" | "spanish" | undefined {
-  return voiceLang === "es" ? "spanish" : undefined;
-}
-
 export interface SpokenPlan {
   plan: Plan;
   /** worklet-clock offset of the plan's time 0 (set when the worklet confirms) */
@@ -70,7 +65,7 @@ export function transcribe(phrases: { segments: Segment[]; intonation?: string }
 }
 
 export function speakPhrases(phrases: { segments: Segment[]; intonation?: "statement" | "question" | "flat"; pause?: number; words?: string[] }[], o: { body: BodyMix; rate: number; f0: number }): SpokenPlan {
-  const plan = planPhrases(phrases, { body: o.body, t0: 0, rate: o.rate, f0: o.f0, lang: planLang() });
+  const plan = planPhrases(phrases, { body: o.body, t0: 0, rate: o.rate, f0: o.f0 });
   const id = engine.schedule({ gestures: plan.gestures.map((g: Gesture) => ({ ...g, targets: { ...g.targets } })), segments: plan.segments, end: plan.end });
   current = { plan, offset: null, id, transcription: transcribe(phrases), words: wordSpans(phrases, plan) };
   for (const l of listeners) l(current);

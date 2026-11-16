@@ -172,9 +172,6 @@ export interface PlanOptions {
   /** a sung phrase (planSong sets it): consonants given a pitch hold it, and pitch ramps shrink
    *  to fit short notes */
   sung?: boolean;
-  /** which language's phonation the utterance follows: English (the default) aspirates
-   *  syllable-initial voiceless stops, Spanish never does */
-  lang?: "english" | "spanish";
 }
 
 export function planUtterance(segments: Segment[], options: PlanOptions): Plan {
@@ -190,11 +187,11 @@ export function planPhrases(phrases: { segments: Segment[]; intonation?: "statem
   return call("planPhrases", { phrases: phrases.map((p) => ({ segments: p.segments, intonation: p.intonation, pause: p.pause })), options });
 }
 
-export function planSong(notes: SungNote[], options: { body: BodyMix; bpm: number; t0: number; vibrato: number; lang?: "english" | "spanish" }): Plan {
+export function planSong(notes: SungNote[], options: { body: BodyMix; bpm: number; t0: number; vibrato: number }): Plan {
   return call("planSong", { notes, options });
 }
 
-export function planNoteOn(syl: Syllable, midi: number, options: { body: BodyMix; vibrato: number; tag: number; legatoFrom?: { syl: Syllable; midi: number }; lang?: "english" | "spanish" }): Gesture[] {
+export function planNoteOn(syl: Syllable, midi: number, options: { body: BodyMix; vibrato: number; tag: number; legatoFrom?: { syl: Syllable; midi: number } }): Gesture[] {
   return call("planNoteOn", { syl, midi, options });
 }
 
@@ -202,8 +199,8 @@ export function planMelisma(midi: number, options: { vibrato: number; tag: numbe
   return call("planMelisma", { midi, options });
 }
 
-export function planNoteOff(syl: Syllable, midi: number, body: BodyMix, lang?: "english" | "spanish"): Gesture[] {
-  return call("planNoteOff", { syl, midi, body, lang });
+export function planNoteOff(syl: Syllable, midi: number, body: BodyMix): Gesture[] {
+  return call("planNoteOff", { syl, midi, body });
 }
 
 /** Smooth activation 0..1..0 with cosine ramps (for drawing the score; the engine's own blend uses its Rust twin). */
