@@ -15,7 +15,6 @@ use chimera::phonetics::english::EnglishG2P;
 use chimera::phonetics::mandarin::MandarinLexicon;
 use chimera::phonetics::spanish::{Dialect, SpanishG2P};
 use chimera::phonetics::syllables::lyrics_to_syllables_with;
-use chimera::phonetics::syllables::Lang;
 use chimera::phonetics::{Segment, Syllable, ipa, songs, vowel_data};
 use chimera::voice::human_airway::HumanAirway;
 use serde_json::{Value, json};
@@ -202,7 +201,7 @@ fn dispatch(st: &mut State, req: &Value) -> Res {
         "planPhrases" => to_json(&planner::plan_phrases(&arg::<Vec<PhraseInput>>(req, "phrases")?, &arg::<PlanOptions>(req, "options")?)),
         "planSong" => to_json(&sing::plan_song(&arg::<Vec<SungNote>>(req, "notes")?, &arg::<SongOptions>(req, "options")?)),
         "planNoteOn" => to_json(&sing::plan_note_on(&arg::<Syllable>(req, "syl")?, arg(req, "midi")?, &arg::<NoteOnOptions>(req, "options")?)),
-        "planNoteOff" => to_json(&sing::plan_note_off(&arg::<Syllable>(req, "syl")?, arg(req, "midi")?, arg::<BodyMix>(req, "body")?, arg::<Option<Lang>>(req, "lang")?)),
+        "planNoteOff" => to_json(&sing::plan_note_off(&arg::<Syllable>(req, "syl")?, arg(req, "midi")?, arg::<BodyMix>(req, "body")?)),
         "planMelisma" => to_json(&sing::plan_melisma(arg(req, "midi")?, &arg::<MelismaOptions>(req, "options")?)),
         // ---------------------------------------------------------------- beatbox
         "parseBeat" => to_json(&beatbox::parse_beat(&arg::<String>(req, "text")?)),

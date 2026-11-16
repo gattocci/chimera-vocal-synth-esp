@@ -59,25 +59,25 @@ fn seg(ipa: &str) -> Segment {
 fn info(s: &Segment) -> SegInfo {
     match s.ipa.as_str() {
         "ɑ" => SegInfo { vowel: true, ..Default::default() },
-        "ɹ" | "l" => SegInfo { vowel: false, manner: Some(Manner::Approximant), voiced: Some(true), dur: None },
-        _ => SegInfo { vowel: false, manner: Some(Manner::Stop), voiced: Some(false), dur: None },
+        "ɹ" | "l" => SegInfo { vowel: false, manner: Some(Manner::Approximant), voiced: Some(true), dur: None, ..Default::default() },
+        _ => SegInfo { vowel: false, manner: Some(Manner::Stop), voiced: Some(false), dur: None, ..Default::default() },
     }
 }
 
 #[test]
 fn a_vowel_and_its_coda_r_share_the_vowels_span() {
     // /l/ takes the same inherent duration and the same context rules as /ɹ/, and no nucleus
-    let with_l = klatt_durations(&[seg("p"), seg("ɑ"), seg("l"), seg("k")], info, None);
-    let with_r = klatt_durations(&[seg("p"), seg("ɑ"), seg("ɹ"), seg("k")], info, None);
+    let with_l = klatt_durations(&[seg("p"), seg("ɑ"), seg("l"), seg("k")], info);
+    let with_r = klatt_durations(&[seg("p"), seg("ɑ"), seg("ɹ"), seg("k")], info);
     assert!((with_r[1] + with_r[2] - with_l[1]).abs() < 1e-9, "ɑ {} + ɹ {} against ɑ {}", with_r[1], with_r[2], with_l[1]);
     // a word's last /ɹ/ is its coda even before a vowel: "car is" keeps "car"'s nucleus
     let end = Segment { word_end: Some(true), ..seg("ɹ") };
-    let linked = klatt_durations(&[seg("p"), seg("ɑ"), end.clone(), seg("ɑ")], info, None);
-    let closed = klatt_durations(&[seg("p"), seg("ɑ"), end, seg("k"), seg("ɑ")], info, None);
-    assert!(linked[1] + linked[2] < 0.75 * (klatt_durations(&[seg("p"), seg("ɑ"), seg("ɹ"), seg("ɑ")], info, None)[1..3].iter().sum::<f64>()), "\"car is\": ɑ {} + ɹ {}", linked[1], linked[2]);
+    let linked = klatt_durations(&[seg("p"), seg("ɑ"), end.clone(), seg("ɑ")], info);
+    let closed = klatt_durations(&[seg("p"), seg("ɑ"), end, seg("k"), seg("ɑ")], info);
+    assert!(linked[1] + linked[2] < 0.75 * (klatt_durations(&[seg("p"), seg("ɑ"), seg("ɹ"), seg("ɑ")], info)[1..3].iter().sum::<f64>()), "\"car is\": ɑ {} + ɹ {}", linked[1], linked[2]);
     assert!((linked[1] - closed[1]).abs() < 0.03, "ɑ {} before a vowel in the next word, {} before a consonant", linked[1], closed[1]);
     // an /ɹ/ that opens the next syllable is not a coda
-    let open = klatt_durations(&[seg("p"), seg("ɑ"), seg("ɹ"), seg("ɑ")], info, None);
-    let open_l = klatt_durations(&[seg("p"), seg("ɑ"), seg("l"), seg("ɑ")], info, None);
+    let open = klatt_durations(&[seg("p"), seg("ɑ"), seg("ɹ"), seg("ɑ")], info);
+    let open_l = klatt_durations(&[seg("p"), seg("ɑ"), seg("l"), seg("ɑ")], info);
     assert!((open[1] - open_l[1]).abs() < 1e-9);
 }

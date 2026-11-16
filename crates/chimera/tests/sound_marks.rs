@@ -101,7 +101,7 @@ fn a_sung_vowel_keeps_its_nasalization() {
     assert_eq!(labelled(&sung(Some(true)).gestures, "velum").len(), 1);
     assert!(labelled(&sung(None).gestures, "velum").is_empty());
     // a live note
-    let live = |n| plan_note_on(&syl(vec![Segment::new("p")], nucleus(n)), 57.0, &NoteOnOptions { body: "male".into(), vibrato: 0.0, tag: 1.0, legato_from: None, lang: None });
+    let live = |n| plan_note_on(&syl(vec![Segment::new("p")], nucleus(n)), 57.0, &NoteOnOptions { body: "male".into(), vibrato: 0.0, tag: 1.0, legato_from: None });
     assert_eq!(labelled(&live(Some(true)), "velum").len(), 1);
     assert!(labelled(&live(None), "velum").is_empty());
     // a nasalized diphthong, sung: each half is a vowel of its own
@@ -270,7 +270,7 @@ fn a_breathy_vowel_parts_the_folds_for_the_whole_vowel() {
 #[test]
 fn sung_syllables_keep_their_breathiness() {
     let song = |onset: Vec<Segment>, nucleus: Segment| plan_song(&[SungNote { midi: 57.0, beats: 1.0, syl: syl(onset, nucleus) }], &SongOptions { body: "male".into(), bpm: 90.0, t0: 0.5, vibrato: 0.0, ..Default::default() });
-    let live = |onset: Vec<Segment>, nucleus: Segment| plan_note_on(&syl(onset, nucleus), 57.0, &NoteOnOptions { body: "male".into(), vibrato: 0.0, tag: 1.0, legato_from: None, lang: None });
+    let live = |onset: Vec<Segment>, nucleus: Segment| plan_note_on(&syl(onset, nucleus), 57.0, &NoteOnOptions { body: "male".into(), vibrato: 0.0, tag: 1.0, legato_from: None });
     let (b, b_soft) = (Segment::new("b"), Segment { breathy: Some(true), ..Segment::new("b") });
     let (a, a_soft) = (Segment::new("a"), Segment { breathy: Some(true), ..Segment::new("a") });
     assert_eq!(labelled(&song(vec![b_soft.clone()], a.clone()).gestures, "breathy").len(), 1);
@@ -287,7 +287,7 @@ fn a_sung_consonant_keeps_its_palatalization() {
     let sung = |s| plan_song(&[SungNote { midi: 57.0, beats: 1.0, syl: syl(onset(s), Segment::new("a")) }], &SongOptions { body: "male".into(), bpm: 90.0, t0: 0.5, vibrato: 0.0, ..Default::default() });
     assert_eq!(labelled(&sung(Some(true)).gestures, "palatalized").len(), 1);
     assert!(labelled(&sung(None).gestures, "palatalized").is_empty());
-    let live = |s| plan_note_on(&syl(onset(s), Segment::new("a")), 57.0, &NoteOnOptions { body: "male".into(), vibrato: 0.0, tag: 1.0, legato_from: None, lang: None });
+    let live = |s| plan_note_on(&syl(onset(s), Segment::new("a")), 57.0, &NoteOnOptions { body: "male".into(), vibrato: 0.0, tag: 1.0, legato_from: None });
     assert_eq!(labelled(&live(Some(true)), "palatalized").len(), 1);
     assert!(labelled(&live(None), "palatalized").is_empty());
     // a coda too

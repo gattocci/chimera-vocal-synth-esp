@@ -64,14 +64,27 @@ describe("spanish voice language", () => {
     expect(lyricsToSyllables("little").map((s) => s.text)).toEqual(["lit", "tle"]);
   });
 
+  test("sung syllables keep the word's allophones", () => {
+    g2p.setLang("es", DIALECT_PRESETS.neutro);
+    // the singing front end applies the allophones before it splits syllables
+    const syls = lyricsToSyllables("banco");
+    const onsets = syls.map((s) => s.onset.map((c) => c.ipa).join(""));
+    expect(onsets).toEqual(["b", "k"]); // the ŋ is the coda of the first syllable
+    expect(syls[0].coda.map((c) => c.ipa)).toEqual(["ŋ"]);
+    g2p.setLang("en"); // the engine's language is page state: leave it English for the next file
+  });
+
   test("the planner aspirates English stops, never Spanish ones", () => {
-    // a syllable-initial /p/ before a vowel: the English plan opens the folds wide (0.36), the
-    // Spanish one barely parts them (0.22)
-    const segs = [{ ipa: "p" }, { ipa: "a", stress: 1 }];
-    const aspiration = (lang?: "english" | "spanish") =>
-      planUtterance(segs, { body: { female: 0, child: 0 }, t0: 0.05, lang }).gestures.find((g) => g.label === "aspiration")?.targets.abduction;
-    expect(aspiration()).toBe(0.36); // English is the default
-    expect(aspiration("english")).toBe(0.36);
-    expect(aspiration("spanish")).toBe(0.22);
+    g2p.setLang("es", DIALECT_PRESETS.neutro);
+    // a syllable-initial /p/ before a vowel: the English plan opens the folds wide (0.36). The
+    // Spanish one is the front end's call: its G2P marks the stop `aspirated: false`, and the
+    // planner barely parts the folds (0.22)
+    const aspiration = (segs: { ipa: string; stress?: number }[]) =>
+      planUtterance(segs, { body: { female: 0, child: 0 }, t0: 0.05 }).gestures.find((g) => g.label === "aspiration")?.targets.abduction;
+    expect(aspiration([{ ipa: "p" }, { ipa: "a", stress: 1 }])).toBe(0.36); // English is the default
+    const spanish = g2p.toPhrases("paso")[0].segments;
+    expect(spanish[0].aspirated).toBe(false);
+    expect(aspiration(spanish.slice(0, 2))).toBe(0.22);
+    g2p.setLang("en"); // the engine's language is page state: leave it English for the next file
   });
 });

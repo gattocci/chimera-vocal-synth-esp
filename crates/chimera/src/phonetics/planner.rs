@@ -7,7 +7,6 @@
 
 use super::durations::{SegInfo, klatt_durations};
 use super::inventory::{Glottal, Manner, PhonemeDef, Voicing, dental_closure, phoneme};
-use super::syllables::Lang;
 use super::{Intonation, Plan, PlannedSegment, Segment};
 use crate::anatomy::human::{ArticKey, ArticPatch, BodyMix, BodyName};
 use crate::control::score::{ControlKey, Gesture, Targets};
@@ -241,10 +240,6 @@ pub struct PlanOptions {
     /// fit short notes. Speech and live notes leave it unset.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sung: Option<bool>,
-    /// which language's phonation the utterance follows. English (the default) aspirates
-    /// syllable-initial voiceless stops; Spanish never does.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub lang: Option<Lang>,
 }
 
 /// JS truthiness of an optional number (`if (s.f0)`: 0 and NaN are false).
@@ -339,8 +334,8 @@ pub fn plan_utterance(input: &[Segment], o: &PlanOptions) -> Plan {
             return SegInfo { vowel: true, ..Default::default() };
         }
         let d = phoneme(&s.ipa, body);
-        SegInfo { vowel: false, manner: d.map(|d| d.manner), voiced: Some(d.is_some_and(|d| d.voicing == Voicing::Voiced)), dur: d.map(|d| d.dur) }
-    }, o.lang);
+        SegInfo { vowel: false, manner: d.map(|d| d.manner), voiced: Some(d.is_some_and(|d| d.voicing == Voicing::Voiced)), dur: d.map(|d| d.dur), aspirated: s.aspirated }
+    });
     // expand diphthongs into two vowel targets sharing the duration
     let mut segs: Vec<Seg> = Vec::with_capacity(input.len() + 4);
     for (si, s) in input.iter().enumerate() {
@@ -528,12 +523,9 @@ pub fn plan_utterance(input: &[Segment], o: &PlanOptions) -> Plan {
                 voiced_again = g.end();
                 gestures.push(g);
             } else if def.manner == Manner::Stop || def.manner == Manner::Affricate {
-                // as the front end says; otherwise the language's rule — Spanish voiceless stops
-                // are never aspirated, and English stops are when syllable-initial before a vowel
-                // and not after /s/
-                let aspirated = s.aspirated.unwrap_or_else(|| {
-                    o.lang != Some(Lang::Spanish) && next_vowel && !prev_seg.is_some_and(|p| p.ipa == "s")
-                });
+                // as the front end says; otherwise the planner's default, English's rule —
+                // aspirated syllable-initially before a vowel and not after /s/
+                let aspirated = s.aspirated.unwrap_or_else(|| next_vowel && !prev_seg.is_some_and(|p| p.ipa == "s"));
                 // the folds stay apart past the release by 40% of the default 50 ms (the ramps
                 // make up the rest of the aspiration); a front end's longer or shorter `vot` moves
                 // that by the whole difference, so the voice onset time it asks for is what it gets

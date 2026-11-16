@@ -76,6 +76,8 @@ fn v_is_b_and_the_stops_fricativise() {
     assert_eq!(say(&g, "dedo"), "dˈeðo");
     assert_eq!(say(&g, "verde"), "bˈeɾðe");
     assert_eq!(say(&g, "algo"), "ˈalɣo");
+    // after /l/ the d stays a stop
+    assert_eq!(say(&g, "caldo"), "kˈaldo");
     // after a pause or a nasal they are stops
     assert_eq!(say(&g, "tengo"), "tˈeŋgo");
     assert_eq!(say(&g, "guapo"), "gwˈapo");
@@ -224,6 +226,8 @@ fn spanish_syllables_for_singing() {
     assert_eq!(split_spelling_lang("leer", 2, Lang::Spanish), vec!["le", "er"]);
     assert_eq!(split_spelling_lang("cae", 2, Lang::Spanish), vec!["ca", "e"]);
     assert_eq!(split_spelling_lang("ruido", 2, Lang::Spanish), vec!["rui", "do"]);
+    // "güi" stays whole (the ü is a glide): pin-güi-no
+    assert_eq!(split_spelling_lang("pingüino", 3, Lang::Spanish), vec!["pin", "güi", "no"]);
     // English spelling is untouched (its final e is silent; the Spanish final e never is)
     assert_eq!(split_spelling("little", 2), vec!["lit", "tle"]);
     assert_eq!(split_spelling_lang("café", 2, Lang::Spanish), vec!["ca", "fé"]);
@@ -243,6 +247,8 @@ fn spanish_lyrics_to_syllables() {
     assert_eq!(syls[1].text, "ís");
     // accented letters are word characters in lyrics
     assert!(lyrics_to_syllables("camión", &g).len() >= 2);
+    // the sung split keeps the diphthong on one note's text
+    assert_eq!(lyrics_to_syllables("pingüino", &g).iter().map(|s| s.text.as_str()).collect::<Vec<_>>(), vec!["pin", "güi", "no"]);
     // a phrase break still ends the word before it
     let syls = lyrics_to_syllables("corazón, corazón", &g);
     assert!(syls[2].phrase_end);
@@ -253,14 +259,40 @@ fn spanish_stops_are_not_aspirated() {
     use chimera::control::score::ControlKey;
     use chimera::phonetics::planner::{PlanOptions, plan_utterance};
 
-    // a syllable-initial /p/ before a vowel: the English planner aspirates it, the Spanish one
-    // never does (a shorter VOT and a narrower glottal opening)
-    let input = vec![Segment::new("p"), Segment::new("a")];
-    let aspiration = |lang: Option<Lang>| {
-        let plan = plan_utterance(&input, &PlanOptions { body: "male".into(), t0: 0.05, lang, ..Default::default() });
+    // a syllable-initial /p/ before a vowel: the planner's default is English's rule (folds wide
+    // open, 0.36); the Spanish front end marks its stops `aspirated: false`, and the planner
+    // barely parts them (0.22)
+    let aspiration = |segs: &[Segment]| {
+        let plan = plan_utterance(segs, &PlanOptions { body: "male".into(), t0: 0.05, ..Default::default() });
         plan.gestures.iter().find(|g| g.label.as_ref().is_some_and(|label| label.as_str() == "aspiration")).map(|g| g.targets.get(ControlKey::ABDUCTION).unwrap_or(0.0))
     };
-    assert_eq!(aspiration(None), Some(0.36)); // English is the default
-    assert_eq!(aspiration(Some(Lang::English)), Some(0.36));
-    assert_eq!(aspiration(Some(Lang::Spanish)), Some(0.22));
+    let english = vec![Segment::new("p"), Segment::new("a")];
+    assert_eq!(aspiration(&english), Some(0.36));
+    let spanish = g2p().word("paso", false);
+    assert_eq!(spanish[0].aspirated, Some(false));
+    assert_eq!(aspiration(&spanish[..2]), Some(0.22));
+    // the durations repay a real aspiration only: the stressed vowel gets back the +20 ms after
+    // the aspirated stop, nothing after the unaspirated one
+    let aspirated_pair = vec![Segment::new("p"), Segment { stress: Some(1), ..Segment::new("a") }];
+    let end = |segs: &[Segment]| plan_utterance(segs, &PlanOptions { body: "male".into(), t0: 0.05, ..Default::default() }).end;
+    assert!((end(&aspirated_pair) - end(&spanish[..2]) - 0.02).abs() < 1e-9);
+}
+
+#[test]
+fn sung_words_keep_their_allophones() {
+    let g = g2p();
+    // the singing front end applies the word's allophones before it splits syllables: [z], [ŋ]
+    // and the fricatives are not speech-only
+    let joined = |w: &str| {
+        lyrics_to_syllables(w, &g).iter().map(|s| {
+            s.onset.iter().chain(std::iter::once(&s.nucleus)).chain(s.coda.iter()).map(|x| x.ipa.as_str()).collect::<String>()
+        }).collect::<Vec<_>>().join("|")
+    };
+    assert_eq!(joined("mismo"), "miz|mo");
+    assert_eq!(joined("banco"), "baŋ|ko");
+    // the rioplatense coda s breathes in singing too
+    let mut rio = SpanishG2P::new();
+    rio.set_dialect(RIOPLATENSE);
+    let syls = lyrics_to_syllables("más", &rio);
+    assert_eq!(syls[0].coda.iter().map(|c| c.ipa.as_str()).collect::<Vec<_>>(), vec!["h"]);
 }
