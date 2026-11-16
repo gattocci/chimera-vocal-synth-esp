@@ -15,8 +15,7 @@ lyrics ──► router ──► FRONT END ──► syllables ──► BACK E
 **A front end is phonology; the back end is physics.** A front end decides what a word's sounds
 are: which phonemes, whether and how long a stop aspirates, how a tone bends the pitch. The back
 end realises whatever the syllables say and knows no language's rules. When a front end says
-nothing, the planner keeps English's defaults, which is why English output doesn't change. English
-stays the voice language until Speak picks another (Spanish, today).
+nothing, the planner keeps English's defaults, which is why English output doesn't change.
 
 This is the shared design for languages (#40), and the first steps of #32 live in it: the sounds
 Korean and Mandarin need (`ɕ ʑ tɕ dʑ tʂ dʐ ɥ`, step 3), aspiration as the front end's call
@@ -57,7 +56,7 @@ Spanish text uses spelling rules, written accents for stress, and shared Spanish
 | Rioplatense | seseo, sheísmo, coda /s/ aspirated |
 | Castellano | /s/ and /θ/ distinction, yeísmo, coda /s/ retained |
 
-Number words are not expanded yet. Spanish lyrics use the same syllable planner as speech.
+The front end marks the voiceless stops `aspirated: false` (Spanish never aspirates them), so the planner's aspiration and the durations' compensation follow the front end's call, as "The one format" above asks. The word's allophones ([β ð ɣ], [ŋ], the coda /s/) are applied before its syllables split, so sung words keep them. Number words are not expanded yet. Spanish lyrics use the same syllable planner as speech.
 
 ## Korean
 
