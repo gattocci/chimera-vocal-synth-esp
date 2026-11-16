@@ -18,6 +18,58 @@ import { engine } from "../../audio/AudioEngine.ts";
 // the examples stay English on purpose: the engine speaks English (CMUdict + letter-to-sound)
 const EXAMPLES = ["Hello. Can you hear me?", "She sells sea shells by the sea shore.", "Every sound here is air moving through a throat.", "The quick brown fox jumps over the lazy dog."];
 
+// Local listening aid; deliberately hidden unless the dev server URL includes ?speak-debug=1.
+const SPEAK_DEBUG = new URLSearchParams(window.location.search).get("speak-debug") === "1";
+
+function downloadBlob(blob: Blob, name: string): void {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function encodeWav(audio: AudioBuffer): Blob {
+  const samples = new Float32Array(audio.length);
+  for (let ch = 0; ch < audio.numberOfChannels; ch++) {
+    const channel = audio.getChannelData(ch);
+    for (let i = 0; i < channel.length; i++) samples[i] += channel[i] / audio.numberOfChannels;
+  }
+  const buffer = new ArrayBuffer(44 + samples.length * 2);
+  const view = new DataView(buffer);
+  const write = (at: number, s: string) => { for (let i = 0; i < s.length; i++) view.setUint8(at + i, s.charCodeAt(i)); };
+  write(0, "RIFF"); view.setUint32(4, 36 + samples.length * 2, true); write(8, "WAVE");
+  write(12, "fmt "); view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, 1, true);
+  view.setUint32(24, audio.sampleRate, true); view.setUint32(28, audio.sampleRate * 2, true); view.setUint16(32, 2, true); view.setUint16(34, 16, true);
+  write(36, "data"); view.setUint32(40, samples.length * 2, true);
+  for (let i = 0; i < samples.length; i++) {
+    const x = Math.max(-1, Math.min(1, samples[i]));
+    view.setInt16(44 + i * 2, x < 0 ? x * 32768 : x * 32767, true);
+  }
+  return new Blob([buffer], { type: "audio/wav" });
+}
+
+function startSpeakCapture(stream: MediaStream): { finish: () => Promise<Blob> } {
+  const mimeType = ["audio/webm;codecs=opus", "audio/ogg;codecs=opus"].find((type) => MediaRecorder.isTypeSupported(type));
+  const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+  const chunks: BlobPart[] = [];
+  recorder.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
+  recorder.start(200);
+  return { finish: () => new Promise((resolve, reject) => {
+    recorder.onerror = () => reject(new Error("Speak audio recording failed"));
+    recorder.onstop = async () => {
+      try {
+        const compressed = new Blob(chunks, { type: recorder.mimeType });
+        const decode = new AudioContext();
+        try { resolve(encodeWav(await decode.decodeAudioData(await compressed.arrayBuffer()))); }
+        finally { await decode.close(); }
+      } catch (e) { reject(e); }
+    };
+    recorder.stop();
+  }) };
+}
+
 // IPA pulmonic consonant chart (rows = manner, columns = place); empty cells are null
 const PLACES = ["Bilabial", "Labiodental", "Dental", "Alveolar", "Postalveolar", "Retroflex", "Palatal", "Velar", "Uvular", "Pharyngeal", "Glottal"];
 /** short headings for the chart's narrow columns (the full names are the cells' titles) */
@@ -159,14 +211,29 @@ export function SpeakRight() {
     setVoiceLang("es", DIALECT_PRESETS[d]);
   };
 
-  const speak = async () => {
+  const speak = async (exportDebug = false) => {
+    let capture: ReturnType<typeof startSpeakCapture> | null = null;
     setBusy(true);
     try {
       await start();
       // the audio didn't start (the error shows on the bar): speaking would only light Stop
       if (!useStore.getState().started) return;
-      await speakText(text, { ipa, body, rate, f0 });
+      const stream = exportDebug ? engine.recordStream() : null;
+      if (exportDebug && stream) capture = startSpeakCapture(stream);
+      const spoken = await speakText(text, { ipa, body, rate, f0 });
+      if (capture) {
+        if (spoken) await new Promise((resolve) => setTimeout(resolve, Math.ceil((spoken.plan.end + 0.18) * 1000)));
+        const wav = await capture.finish();
+        capture = null;
+        if (spoken) {
+          const slug = text.trim().toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "-").replace(/^-|-$/g, "").slice(0, 48) || "speak";
+          const base = `chimera-${lang}-${dialect}-${slug}`;
+          downloadBlob(wav, `${base}.wav`);
+          downloadBlob(new Blob([JSON.stringify({ text, ipa, language: lang, dialect, transcription: spoken.transcription, sampleRate: engine.sampleRate }, null, 2)], { type: "application/json" }), `${base}.json`);
+        }
+      }
     } finally {
+      if (capture) void capture.finish().catch(() => {});
       setBusy(false);
     }
   };
@@ -182,6 +249,7 @@ export function SpeakRight() {
     <div className="right right-speak">
       <ActionBar label="Speak" onSpace={press}>
         <PrimaryButton label="Speak" playing={speaking} busy={busy ? "Preparing…" : null} onClick={press} />
+        {SPEAK_DEBUG && <Chip toggle={false} disabled={busy || speaking} onClick={() => void speak(true)} title="Speak this text and download its audio as WAV, with a JSON record of the exact input and transcription">Export WAV</Chip>}
         {/* puts an example in the box: the menu always reads Examples, since the box shows the words */}
         <Menu
           label="Examples"

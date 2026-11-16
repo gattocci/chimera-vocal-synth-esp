@@ -25,6 +25,8 @@ import { presetOf, PRESETS } from "./body.ts";
 const AnatomyView3D = lazy(() => import("./components/AnatomyView3D.tsx").then((m) => ({ default: m.AnatomyView3D })));
 // the duet page (`?show=<id>`): two 3D heads replaying a pre-rendered song
 const DuetPage = lazy(() => import("./components/DuetPage.tsx").then((m) => ({ default: m.DuetPage })));
+// a local dialogue experiment: live Speak voices in a small editable stage
+const ScenePage = lazy(() => import("./components/ScenePage.tsx").then((m) => ({ default: m.ScenePage })));
 
 /** the show to play, from `?show=<id>` (a plain folder name under public/shows) */
 function showId(): string | null {
@@ -182,6 +184,12 @@ function PlayRight() {
 
 export function App() {
   const show = showId();
+  if (new URLSearchParams(window.location.search).get("scene") === "1")
+    return (
+      <Suspense fallback={null}>
+        <ScenePage />
+      </Suspense>
+    );
   if (show)
     return (
       <Suspense fallback={null}>
