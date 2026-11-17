@@ -514,7 +514,10 @@ fn apply_allophones(d: &Dialect, segs: &mut [Segment]) {
                     .is_some_and(|n| !is_es_vowel(n) && n != "j" && n != "w")
                     || s.word_end == Some(true);
                 if coda {
-                    if d.aspirated_s {
+                    if d.aspirated_s && s.word_end != Some(true) {
+                        // Rioplatense /s/ can weaken before a consonant ("mismo"), but keep
+                        // word-final /s/ audible rather than dropping it into a weak [h].
+                        s.dur = Some(0.05);
                         s.ipa = "h".into();
                     } else if next.as_deref().is_some_and(voiced_consonant) && s.word_end != Some(true) {
                         s.ipa = "z".into();

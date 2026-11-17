@@ -193,9 +193,10 @@ fn dialect_switches() {
     // zheísmo and lleísta variants
     assert_eq!(say(&g2p(Dialect { seseo: true, ll: Ll::Zheismo, aspirated_s: false }), "llave"), "ʒˈaβe");
     assert_eq!(say(&g2p(Dialect { seseo: true, ll: Ll::Lleista, aspirated_s: false }), "llave"), "ʎˈaβe");
-    // aspirated coda s: before a consonant and word-finally, but not before a vowel
+    // Rioplatense /s/ weakens before a consonant, while word-final /s/ remains audible
     assert_eq!(say(&g2p(RIOPLATENSE), "mismo"), "mˈihmo");
-    assert_eq!(say(&g2p(RIOPLATENSE), "más"), "mˈah");
+    assert_eq!(say(&g2p(RIOPLATENSE), "más"), "mˈas");
+    assert_eq!(say(&g2p(RIOPLATENSE), "país"), "paˈis");
     assert_eq!(say(&g2p(RIOPLATENSE), "casa"), "kˈasa");
     // the default is neutro: seseo, jeísmo, s kept
     assert_eq!(say(&g2p(NEUTRO), "llave"), "ʝˈaβe");
@@ -290,9 +291,11 @@ fn sung_words_keep_their_allophones() {
     };
     assert_eq!(joined("mismo"), "miz|mo");
     assert_eq!(joined("banco"), "baŋ|ko");
-    // the rioplatense coda s breathes in singing too
+    // the rioplatense coda /s/ weakens before a consonant in singing, but stays /s/ at word end
     let mut rio = SpanishG2P::new();
     rio.set_dialect(RIOPLATENSE);
-    let syls = lyrics_to_syllables("más", &rio);
-    assert_eq!(syls[0].coda.iter().map(|c| c.ipa.as_str()).collect::<Vec<_>>(), vec!["h"]);
+    let internal_s = lyrics_to_syllables("mismo", &rio);
+    assert_eq!(internal_s[0].coda.iter().map(|c| c.ipa.as_str()).collect::<Vec<_>>(), vec!["h"]);
+    let final_s = lyrics_to_syllables("país", &rio);
+    assert_eq!(final_s[1].coda.iter().map(|c| c.ipa.as_str()).collect::<Vec<_>>(), vec!["s"]);
 }
