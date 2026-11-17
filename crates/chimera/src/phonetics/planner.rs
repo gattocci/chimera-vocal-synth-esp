@@ -292,12 +292,10 @@ const BREATHY_RELEASE: f64 = 0.08;
 /// The tongue is too slow (13 Hz) to strike 26 times a second and reopen: at 26 Hz it hovered
 /// near the ridge with the voicing all but gone; and above speed 6 it overshot and bounced.
 const TRILL_HZ: f64 = 20.0;
-const TRILL_LEAD: f64 = 0.025;
 const TRILL_STRIKE: f64 = 0.45;
 const TRILL_RAMP: f64 = 0.004;
 const TRILL_SPEED: f64 = 3.5;
-const TRILL_OPEN: f64 = 1.8;
-const NASAL_STOP_OPEN_SHARE: f64 = 0.4;
+const TRILL_OPEN: f64 = 1.6;
 
 /// where a trill's articulator is pulled back to between strikes: away from the place by
 /// `TRILL_OPEN` (cm) for the tongue, by an open lip gap for the lips
@@ -467,10 +465,10 @@ pub fn plan_utterance(input: &[Segment], o: &PlanOptions) -> Plan {
                 // with tight ramps: with a stop's 30 ms ramp-in and 18 ms ramp-out the strikes
                 // overlapped into one held near-closure and the voice stopped for ~90 ms (Spanish
                 // "perro" sounded wrong; tests/trill.rs)
-                let n = js_max(3.0, js_round(dur * TRILL_HZ));
+                let n = js_max(2.0, js_round(dur * TRILL_HZ));
                 let mut k = 0.0;
                 while k < n {
-                    let a = t0 + (k / n) * dur - TRILL_LEAD;
+                    let a = t0 + (k / n) * dur;
                     let b = a + TRILL_STRIKE * dur / n;
                     gestures.push(Gesture::new(a, b, TRILL_RAMP, TRILL_RAMP, 40.0, artic_targets(&def.targets)).speed(TRILL_SPEED).release_hold(TRILL_RAMP).label(def.ipa));
                     if k + 1.0 < n {
