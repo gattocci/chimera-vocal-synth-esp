@@ -154,23 +154,40 @@ impl SpanishG2P {
             merge_vowel_runs(&mut pieces);
             let stress = pick_stress(clean, &pieces);
             let mut nucleus = 0usize;
-            pieces
+            let mut segments: Vec<Segment> = pieces
                 .into_iter()
                 .map(|p| {
-                    let (ipa, stress) = match p {
-                        Piece::C(c) => (c.to_string(), 0),
+                    let (ipa, stress, length) = match p {
+                        Piece::C(c) => (c.to_string(), 0, None),
+                        Piece::Trill => ("r".to_string(), 0, Some(1.4)),
                         Piece::V(v, accent) => {
                             let s = stress.get(nucleus).copied().unwrap_or(0);
                             nucleus += 1;
-                            (v.to_string(), if accent { 1 } else { s })
+                            (v.to_string(), if accent { 1 } else { s }, None)
                         }
                     };
                     // Spanish voiceless stops are never aspirated: the front end says so (see
                     // docs/language-front-ends.md, "The one format"), the planner does the rest
                     let aspirated = matches!(ipa.as_str(), "p" | "t" | "k" | "tʃ").then_some(false);
-                    Segment { ipa, stress: Some(stress), aspirated, ..Default::default() }
+                    Segment { ipa, stress: Some(stress), aspirated, length, ..Default::default() }
                 })
-                .collect()
+                .collect();
+            // The engine gives every /ɾ/ the same 20 ms floor. Give Spanish /p t k + ɾ/ onsets
+            // a little more span to make the tap perceptible; other taps stay at their current time.
+            for i in 1..segments.len() {
+                if segments[i].ipa == "ɾ" && matches!(segments[i - 1].ipa.as_str(), "p" | "t" | "k") {
+                    segments[i].length = Some(1.4);
+                }
+            }
+            for i in 0..segments.len() {
+                let prev = i.checked_sub(1).and_then(|j| segments.get(j)).map(|s| s.ipa.as_str());
+                // Listening reports weaker initial /tʃ/ and after /a,n/; add a small Spanish-only
+                // duration cue while leaving the well-heard /e,o,u + tʃ/ controls alone.
+                if segments[i].ipa == "tʃ" && (i == 0 || matches!(prev, Some("a" | "n"))) {
+                    segments[i].length = Some(1.2);
+                }
+            }
+            segments
         };
         // the word's own allophones (β ð ɣ, ŋ, the coda s) are part of its sounds: sung words
         // get them too, before the syllables split (the phrase pass in `to_phrases` adds the
@@ -196,6 +213,8 @@ impl WordSource for SpanishG2P {
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Piece {
     C(&'static str),
+    /// orthographic rr: a strong trill with a longer span than word-initial single r
+    Trill,
     /// vowel, and whether the written accent marks it as the stressed one
     V(&'static str, bool),
 }
@@ -231,7 +250,7 @@ fn diphthong(v1: &str, v2: &str) -> Option<&'static str> {
 fn scan(word: &str, d: &Dialect) -> Vec<Piece> {
     let s: Vec<char> = word.chars().collect();
     let n = s.len();
-    let soft = |k: usize| matches!(s.get(k), Some('e') | Some('i'));
+    let soft = |k: usize| matches!(s.get(k), Some('e' | 'i' | 'é' | 'í'));
     let vowel = |k: usize| matches!(s.get(k), Some('a') | Some('e') | Some('i') | Some('o') | Some('u') | Some('á') | Some('é') | Some('í') | Some('ó') | Some('ú'));
     let mut out: Vec<Piece> = Vec::new();
     let mut i = 0;
@@ -250,7 +269,7 @@ fn scan(word: &str, d: &Dialect) -> Vec<Piece> {
                 continue;
             }
             'r' if s.get(i + 1) == Some(&'r') => {
-                out.push(Piece::C("r"));
+                out.push(Piece::Trill);
                 i += 2;
                 continue;
             }
@@ -323,9 +342,14 @@ fn scan(word: &str, d: &Dialect) -> Vec<Piece> {
             'h' => {} // silent
             'j' => out.push(Piece::C("x")),
             'x' => {
-                // x = [ks]: e-xa-men (the cluster is an onset, see `syllables::ONSETS_ES`)
-                out.push(Piece::C("k"));
-                out.push(Piece::C("s"));
+                // In México and its derivatives, written x keeps the historical [x]; elsewhere
+                // it is [ks] (e-xa-men; the cluster is an onset, see `syllables::ONSETS_ES`).
+                if word.starts_with("mexic") || word.starts_with("méxic") {
+                    out.push(Piece::C("x"));
+                } else {
+                    out.push(Piece::C("k"));
+                    out.push(Piece::C("s"));
+                }
             }
             'ñ' => out.push(Piece::C("ɲ")),
             'c' => out.push(Piece::C(if soft(i + 1) { if d.seseo { "s" } else { "θ" } } else { "k" })),
@@ -510,6 +534,11 @@ fn apply_allophones(d: &Dialect, segs: &mut [Segment]) {
                     .as_deref()
                     .is_some_and(|n| !is_es_vowel(n) && n != "j" && n != "w")
                     || s.word_end == Some(true);
+                // The listener's only weak word-final /s/ follows the high vowel in "país";
+                // give that coda a modest span increase without lengthening other final sibilants.
+                if s.word_end == Some(true) && prev.as_deref() == Some("i") {
+                    s.length = Some(1.25);
+                }
                 if coda {
                     if d.aspirated_s && s.word_end != Some(true) {
                         // Rioplatense /s/ can weaken before a consonant ("mismo"), but keep

@@ -58,6 +58,11 @@ fn soft_and_hard_c_and_g() {
     let g = g2p();
     // soft c → [s] (seseo); hard c → [k]; "cc" = [ks]
     assert_eq!(say(&g, "cine"), "sˈine");
+    // accented front vowels still make c/g soft (the user's Speak report: crecí → kreki)
+    assert_eq!(say(&g, "crecí"), "kɾesˈi");
+    assert_eq!(say(&g, "césped"), "sˈespeð");
+    assert_eq!(say(&g, "gélido"), "xˈeliðo");
+    assert_eq!(say(&g, "régimen"), "rˈeximen");
     assert_eq!(say(&g, "casa"), "kˈasa");
     assert_eq!(say(&g, "cocción"), "koksjˈon");
     assert_eq!(say(&g, "química"), "kˈimika");
@@ -70,6 +75,27 @@ fn soft_and_hard_c_and_g() {
     assert_eq!(say(&g, "agenda"), "axˈenda");
     // x = [ks]
     assert_eq!(say(&g, "examen"), "eksˈamen");
+    assert_eq!(say(&g, "taxi"), "tˈaksi");
+    // x retains its historical [x] in México and its derivatives
+    assert_eq!(say(&g, "México"), "mˈexiko");
+    assert_eq!(say(&g, "mexicano"), "mexikˈano");
+
+    let word = |w: &str| g.word(w, false);
+    let phone = |w: &str, ipa: &str| word(w).into_iter().find(|s| s.ipa == ipa).unwrap();
+    assert_eq!(phone("chico", "tʃ").length, Some(1.2));
+    assert_eq!(phone("hacha", "tʃ").length, Some(1.2));
+    assert_eq!(phone("ancho", "tʃ").length, Some(1.2));
+    assert_eq!(phone("leche", "tʃ").length, None);
+    assert_eq!(phone("noche", "tʃ").length, None);
+    assert_eq!(word("país").last().unwrap().length, Some(1.25));
+    assert_eq!(word("más").last().unwrap().length, None);
+
+    // The rule is shared by all three presets; Castellano changes soft c to [θ].
+    for (dialect, expected) in [(NEUTRO, "kɾesˈi"), (RIOPLATENSE, "kɾesˈi"), (CASTELLANO, "kɾeθˈi")] {
+        let mut dialect_g2p = SpanishG2P::new();
+        dialect_g2p.set_dialect(dialect);
+        assert_eq!(say(&dialect_g2p, "crecí"), expected);
+    }
 }
 
 #[test]
@@ -100,6 +126,14 @@ fn tap_and_trill_rules() {
     assert_eq!(say(&g, "enredo"), "enrˈeðo");
     assert_eq!(say(&g, "alrededor"), "alreðeðˈoɾ");
     assert_eq!(say(&g, "Israel"), "izraˈel");
+    let trill = g.word("guerra", false).into_iter().find(|s| s.ipa == "r").unwrap();
+    let initial_trill = g.word("régimen", false).into_iter().find(|s| s.ipa == "r").unwrap();
+    let tap = g.word("caro", false).into_iter().find(|s| s.ipa == "ɾ").unwrap();
+    let cluster_tap = g.word("crecí", false).into_iter().find(|s| s.ipa == "ɾ").unwrap();
+    assert_eq!(trill.length, Some(1.4));
+    assert_eq!(initial_trill.length, None);
+    assert_eq!(tap.length, None);
+    assert_eq!(cluster_tap.length, Some(1.4));
 }
 
 #[test]

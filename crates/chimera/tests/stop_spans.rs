@@ -92,6 +92,33 @@ fn a_stop_after_s_sounds_closed_about_when_its_span_starts() {
     }
 }
 
+#[test]
+fn a_stop_after_a_lateral_closes_in_time() {
+    let ipa = "ˈalto ˈaldo ˈalta ˈalda";
+    for name in ["male", "female"] {
+        let (n, median) = median_fall(ipa, name, |kind, _| kind == "lateral");
+        assert!(n == 4 && median.is_finite() && median.abs() <= 25.0, "{name}: lateral-to-stop closure at {median:.1} ms across {n} stops");
+    }
+}
+
+#[test]
+fn f_in_falda_is_not_lost_relative_to_f_controls() {
+    let mut relative_levels = Vec::new();
+    for ipa in ["fˈalda", "fˈasil", "fwˈeɣo"] {
+        let r = render(ipa, "male");
+        let f = r.plan.segments.iter().find(|s| s.ipa == "f").unwrap();
+        let vowel = r.plan.segments.iter().find(|s| s.kind == "vowel").unwrap();
+        let mean = |a: f64, b: f64| {
+            let values: Vec<f64> = r.blocks.iter().filter(|x| x.0 >= a && x.0 <= b).map(|x| x.1).collect();
+            values.iter().sum::<f64>() / values.len() as f64
+        };
+        let relative_db = 10.0 * (mean(f.t0, f.t1) / mean(vowel.t0, vowel.t1)).log10();
+        relative_levels.push(relative_db);
+    }
+    assert!((relative_levels[0] - relative_levels[1]).abs() < 5.0, "falda/fácil: {relative_levels:?} dB relative to the first vowel");
+    assert!((relative_levels[0] - relative_levels[2]).abs() < 5.0, "falda/fuego: {relative_levels:?} dB relative to the first vowel");
+}
+
 /// As a voiced fricative it read −10 to −14 dB under the stressed vowels through its span, where the
 /// speakers' sits under −40 until about 20 ms before its end.
 #[test]

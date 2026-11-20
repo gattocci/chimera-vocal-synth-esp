@@ -533,6 +533,12 @@ pub fn plan_timed<'a>(input: impl Iterator<Item = TimedSegment<'a>>, o: &PlanOpt
             Manner::Fricative | Manner::Approximant | Manner::Lateral => add_oral(&def.targets, t0, t1, 1.3, def.ipa),
             Manner::Glottal | Manner::Vowel => {}
         }
+        // /l/ keeps its side channel open after its segment ends. An alveolar stop closes
+        // the tongue tip, but without releasing that lateral gesture /lt/ and /ld/ stay audible
+        // as a lateral and the stop can disappear (Speak reports: "alto" → "allo", "caldo" → "calo").
+        if def.manner == Manner::Stop && prev_seg.is_some_and(|p| matches!(p.ipa, "l" | "ɫ")) {
+            gestures.push(Gesture::new(t0 - 0.07, t1 - 0.02, 0.04, 0.018, 125.0, one(ArticKey::Lateral, 0.0)).label("lateral release before stop"));
+        }
         // nasality: the velum lowers in anticipation (into the preceding vowel, as in English). The
         // port opens about 37 ms before the span and seals about 29 ms after it, as its lag isn't
         // compensated. 0.45 cm² is ample for the murmur. Before a voiced stop it seals about 44 ms
