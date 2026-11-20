@@ -12,7 +12,7 @@ use chimera::creatures::voice::CreatureVoice;
 use chimera::creatures::{CREATURES, creature_by_id};
 use chimera::math::{js_max, js_min, js_round, log10};
 use chimera::phonetics::beatbox::{BEAT_PRESETS, BEAT_SOUNDS, BeatStep, beat_ready, parse_beat};
-use chimera::phonetics::english::{EnglishG2P, Phrase};
+use chimera::phonetics::english::EnglishG2P;
 use chimera::phonetics::ipa::{skipped_ipa, tokenize_ipa};
 use chimera::phonetics::planner::{
     PhraseInput, PlanOptions, plan_phrases, plan_utterance, vowel_table,
@@ -25,7 +25,7 @@ use chimera::phonetics::songs::DEMO_SONGS;
 use chimera::phonetics::mandarin::{MandarinLexicon, is_han};
 use chimera::phonetics::syllables::{Lang, lyrics_in, lyrics_to_syllables};
 use chimera::phonetics::turkish;
-use chimera::phonetics::{Intonation, Plan, Syllable};
+use chimera::phonetics::{Intonation, Phrase, Plan, Syllable};
 use chimera::voice::human_voice::{HumanVoice, SCOPE_POINTS, SourcePatch, VoiceTelemetry};
 use std::io::Read;
 use std::time::Instant;
