@@ -8,10 +8,23 @@ import { call } from "./chimera.ts";
 import { CREATURE_VISUALS } from "../ui/creatureVisuals.ts";
 import type {
   ArticKey, ArticSpec, BeatPreset, BodyMix, BeatSound, BeatStep, CreatureDef, CreatureTelemetry, DemoSong, Gesture, HumanArtic, HumanBody,
-  HumanFrame, Phrase, Plan, Segment, SkippedIpa, SungNote, Syllable, VoiceSource, VowelRef,
+  HumanFrame, Lang, Phrase, Plan, Segment, SkippedIpa, SungNote, Syllable, VoiceSource, VowelRef,
 } from "./types.ts";
 
 export type * from "./types.ts";
+
+/** Spanish front-end switches, mirrored from the Rust engine's Dialect. */
+export interface Dialect {
+  seseo: boolean;
+  ll: "jeismo" | "sheismo" | "zheismo" | "lleista";
+  aspiratedS: boolean;
+}
+export const DIALECT_PRESETS = {
+  neutro: { seseo: true, ll: "jeismo", aspiratedS: false },
+  rioplatense: { seseo: true, ll: "sheismo", aspiratedS: true },
+  castellano: { seseo: false, ll: "jeismo", aspiratedS: false },
+} satisfies Record<string, Dialect>;
+export type DialectPreset = keyof typeof DIALECT_PRESETS;
 
 interface Catalog {
   neutral: HumanArtic;
@@ -60,24 +73,6 @@ export function tokenizeIpa(text: string): Segment[] {
   return call("tokenizeIpa", { text });
 }
 
-/** How the Spanish front-end treats seseo, ll/y and coda /s/ (the engine's `Dialect`). */
-export interface Dialect {
-  /** /z/ and soft /c/ say [s] (seseo) or [θ] (distinción) */
-  seseo: boolean;
-  /** /ll/ and consonantal /y/ say [ʝ] (jeismo), [ʃ] (sheismo), [ʒ] (zheismo) or [ʎ] (lleista) */
-  ll: "jeismo" | "sheismo" | "zheismo" | "lleista";
-  /** syllable-final /s/ breathes instead of staying [s] */
-  aspiratedS: boolean;
-}
-
-/** the dialect presets the UI offers (the engine's own; neutro is the default) */
-export const DIALECT_PRESETS = {
-  neutro: { seseo: true, ll: "jeismo", aspiratedS: false },
-  rioplatense: { seseo: true, ll: "sheismo", aspiratedS: true },
-  castellano: { seseo: false, ll: "jeismo", aspiratedS: false },
-} satisfies Record<string, Dialect>;
-export type DialectPreset = keyof typeof DIALECT_PRESETS;
-
 /**
  * What `tokenizeIpa` leaves out of IPA text without a word, in input order, each item once: symbols
  * the engine does not know, symbols it knows but has no sound for, and letters whose mark it
@@ -88,12 +83,10 @@ export function skippedIpa(text: string): SkippedIpa {
 }
 
 /**
- * Text → phonemes: English through CMUdict once loaded (fetched and gunzipped here, parsed by
- * the engine; letter-to-sound rules until then) or Spanish through its rules (no dictionary,
- * dialect switches included). One front-end per page: the engine keeps both and routes by the
- * language set with `setLang`.
+ * English text → phonemes: CMUdict once loaded (fetched and gunzipped here, parsed by the
+ * engine), letter-to-sound rules until then. One dictionary per page (the engine keeps it).
  */
-export class G2P {
+export class EnglishG2P {
   private loading: Promise<void> | null = null;
   private isLoaded = false;
 
@@ -120,22 +113,14 @@ export class G2P {
     this.isLoaded = true;
   }
 
-  /**
-   * Route the text calls (`toPhrases`, `word`, `lyricsToSyllables`) through this language's
-   * front-end; `dialect` sets the Spanish one's switches (seseo, ll/y, coda s).
-   */
-  setLang(lang: "en" | "es", dialect?: Dialect): void {
-    call("g2pLang", { lang, dialect });
-  }
-
   /** Text → phrases of segments. */
-  toPhrases(text: string): Phrase[] {
-    return call("g2pPhrases", { text });
+  toPhrases(text: string, lang: Lang = "en", dialect?: Dialect): Phrase[] {
+    return call("g2pPhrases", { text, lang, dialect });
   }
 
   /** One word → segments with lexical stress. `reduce`: weak forms of function words (speech). */
-  word(w: string, reduce = true): Segment[] {
-    return call("g2pWord", { word: w, reduce });
+  word(w: string, reduce = true, lang: Lang = "en", dialect?: Dialect): Segment[] {
+    return call("g2pWord", { word: w, reduce, lang, dialect });
   }
 }
 
@@ -180,9 +165,21 @@ export class MandarinLexicon {
   }
 }
 
-/** Lyrics → sung syllables through the built-in front ends: pinyin, English (the page's dictionary, see `G2P`) or Spanish, Korean, Russian, and Mandarin once its lexicon is loaded. */
-export function lyricsToSyllables(text: string): Syllable[] {
-  return call("lyricsToSyllables", { text });
+/**
+ * Lyrics → sung syllables through the built-in front ends: pinyin, the Latin-script language
+ * (`lang`: English through the page's dictionary, see EnglishG2P, Turkish or Spanish), Korean, Russian,
+ * and Mandarin once its lexicon is loaded.
+ */
+export function lyricsToSyllables(text: string, lang: Lang = "en", dialect?: Dialect): Syllable[] {
+  return call("lyricsToSyllables", { text, lang, dialect });
+}
+
+/**
+ * Turkish text → phrases of segments. Its spelling rules are the G2P, so there is no dictionary to
+ * load (crates/chimera/src/phonetics/turkish.rs).
+ */
+export function turkishPhrases(text: string): Phrase[] {
+  return call("trPhrases", { text });
 }
 
 // ------------------------------------------------------------------ planning

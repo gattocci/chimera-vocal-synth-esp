@@ -171,6 +171,8 @@ export interface Segment {
   breathy?: boolean;
   /** a vowel that is a glide off the vowel before it, reached over this long (s): one movement, not a second held vowel */
   glide?: number;
+  /** a long sound: this many times the duration rules' length (Turkish's vowel before ğ) */
+  length?: number;
 }
 
 /** What the engine will not say as written in a piece of IPA text (see `skippedIpa`). */
@@ -196,6 +198,10 @@ export interface Plan {
   segments: PlannedSegment[];
   end: number;
 }
+
+/** The language Latin-script words are read in: their script can't tell these languages apart, so
+ *  the player chooses (Rust's `syllables::Lang`). Other scripts go to their own front ends. */
+export type Lang = "en" | "tr" | "es";
 
 export interface Phrase {
   segments: Segment[];

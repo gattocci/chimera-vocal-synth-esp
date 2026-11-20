@@ -5,8 +5,13 @@
 //! sits directly on the stressed segment (the syllable's vowel), as `Segment.stress` carries it.
 
 use chimera::phonetics::spanish::{CASTELLANO, Dialect, Ll, NEUTRO, RIOPLATENSE, SpanishG2P};
-use chimera::phonetics::syllables::{Lang, lyrics_to_syllables, split_spelling, split_spelling_lang, syllabify_segments_lang};
+use chimera::phonetics::mandarin::MandarinLexicon;
+use chimera::phonetics::syllables::{Lang, SyllableLang, lyrics_in, split_spelling, split_spelling_lang, syllabify_segments_lang};
 use chimera::phonetics::Segment;
+
+fn lyrics_es(text: &str, g: &SpanishG2P) -> Vec<chimera::phonetics::Syllable> {
+    lyrics_in(text, g, &MandarinLexicon::new(), Lang::Es)
+}
 
 /// one word through the real phrase path (word-level allophones included), IPA with stress marks
 fn say(g: &SpanishG2P, w: &str) -> String {
@@ -210,48 +215,48 @@ fn dialect_switches() {
 fn spanish_syllables_for_singing() {
     let g = g2p();
     // consonant–glide onsets and digraph codas split the Spanish way
-    let parts = syllabify_segments_lang(&g.word("tierra", false), Lang::Spanish);
+    let parts = syllabify_segments_lang(&g.word("tierra", false), SyllableLang::Spanish);
     let nuclei: Vec<String> = parts.iter().map(|p| p.nucleus.ipa.clone()).collect();
     assert_eq!(nuclei, vec!["e".to_string(), "a".to_string()]); // tje-rra: two nuclei
     let onsets: Vec<String> = parts.iter().map(|p| p.onset.iter().map(|s| s.ipa.as_str()).collect()).collect();
     assert_eq!(onsets, vec!["tj".to_string(), "r".to_string()]);
     // the hiatus keeps two nuclei ("pa-ís")
-    assert_eq!(syllabify_segments_lang(&g.word("país", false), Lang::Spanish).len(), 2);
+    assert_eq!(syllabify_segments_lang(&g.word("país", false), SyllableLang::Spanish).len(), 2);
     // spelling splits keep the digraph right ("gue-rra") and "qu" whole ("que-so")
-    assert_eq!(split_spelling_lang("guerra", 2, Lang::Spanish), vec!["gue", "rra"]);
-    assert_eq!(split_spelling_lang("queso", 2, Lang::Spanish), vec!["que", "so"]);
-    assert_eq!(split_spelling_lang("camión", 2, Lang::Spanish), vec!["ca", "mión"]);
-    assert_eq!(split_spelling_lang("tierra", 2, Lang::Spanish), vec!["tie", "rra"]);
+    assert_eq!(split_spelling_lang("guerra", 2, SyllableLang::Spanish), vec!["gue", "rra"]);
+    assert_eq!(split_spelling_lang("queso", 2, SyllableLang::Spanish), vec!["que", "so"]);
+    assert_eq!(split_spelling_lang("camión", 2, SyllableLang::Spanish), vec!["ca", "mión"]);
+    assert_eq!(split_spelling_lang("tierra", 2, SyllableLang::Spanish), vec!["tie", "rra"]);
     // a hiatus breaks the written run too ([pa-ís], [le-er], [ca-e]); the diphthong stays whole
-    assert_eq!(split_spelling_lang("país", 2, Lang::Spanish), vec!["pa", "ís"]);
-    assert_eq!(split_spelling_lang("leer", 2, Lang::Spanish), vec!["le", "er"]);
-    assert_eq!(split_spelling_lang("cae", 2, Lang::Spanish), vec!["ca", "e"]);
-    assert_eq!(split_spelling_lang("ruido", 2, Lang::Spanish), vec!["rui", "do"]);
+    assert_eq!(split_spelling_lang("país", 2, SyllableLang::Spanish), vec!["pa", "ís"]);
+    assert_eq!(split_spelling_lang("leer", 2, SyllableLang::Spanish), vec!["le", "er"]);
+    assert_eq!(split_spelling_lang("cae", 2, SyllableLang::Spanish), vec!["ca", "e"]);
+    assert_eq!(split_spelling_lang("ruido", 2, SyllableLang::Spanish), vec!["rui", "do"]);
     // "güi" stays whole (the ü is a glide): pin-güi-no
-    assert_eq!(split_spelling_lang("pingüino", 3, Lang::Spanish), vec!["pin", "güi", "no"]);
+    assert_eq!(split_spelling_lang("pingüino", 3, SyllableLang::Spanish), vec!["pin", "güi", "no"]);
     // English spelling is untouched (its final e is silent; the Spanish final e never is)
     assert_eq!(split_spelling("little", 2), vec!["lit", "tle"]);
-    assert_eq!(split_spelling_lang("café", 2, Lang::Spanish), vec!["ca", "fé"]);
+    assert_eq!(split_spelling_lang("café", 2, SyllableLang::Spanish), vec!["ca", "fé"]);
 }
 
 #[test]
 fn spanish_lyrics_to_syllables() {
     let g = g2p();
     // one syllable per note; the display text keeps its spelling (and its case)
-    let syls = lyrics_to_syllables("La luna llena", &g);
+    let syls = lyrics_es("La luna llena", &g);
     let texts: Vec<&str> = syls.iter().map(|s| s.text.as_str()).collect();
     assert_eq!(texts, vec!["La", "lu", "na", "lle", "na"]);
     // the hiatus "país" gives two notes
-    let syls = lyrics_to_syllables("país", &g);
+    let syls = lyrics_es("país", &g);
     assert_eq!(syls.len(), 2);
     assert_eq!(syls[0].text, "pa");
     assert_eq!(syls[1].text, "ís");
     // accented letters are word characters in lyrics
-    assert!(lyrics_to_syllables("camión", &g).len() >= 2);
+    assert!(lyrics_es("camión", &g).len() >= 2);
     // the sung split keeps the diphthong on one note's text
-    assert_eq!(lyrics_to_syllables("pingüino", &g).iter().map(|s| s.text.as_str()).collect::<Vec<_>>(), vec!["pin", "güi", "no"]);
+    assert_eq!(lyrics_es("pingüino", &g).iter().map(|s| s.text.as_str()).collect::<Vec<_>>(), vec!["pin", "güi", "no"]);
     // a phrase break still ends the word before it
-    let syls = lyrics_to_syllables("corazón, corazón", &g);
+    let syls = lyrics_es("corazón, corazón", &g);
     assert!(syls[2].phrase_end);
 }
 
@@ -285,7 +290,7 @@ fn sung_words_keep_their_allophones() {
     // the singing front end applies the word's allophones before it splits syllables: [z], [ŋ]
     // and the fricatives are not speech-only
     let joined = |w: &str| {
-        lyrics_to_syllables(w, &g).iter().map(|s| {
+        lyrics_es(w, &g).iter().map(|s| {
             s.onset.iter().chain(std::iter::once(&s.nucleus)).chain(s.coda.iter()).map(|x| x.ipa.as_str()).collect::<String>()
         }).collect::<Vec<_>>().join("|")
     };
@@ -294,8 +299,8 @@ fn sung_words_keep_their_allophones() {
     // the rioplatense coda /s/ weakens before a consonant in singing, but stays /s/ at word end
     let mut rio = SpanishG2P::new();
     rio.set_dialect(RIOPLATENSE);
-    let internal_s = lyrics_to_syllables("mismo", &rio);
+    let internal_s = lyrics_es("mismo", &rio);
     assert_eq!(internal_s[0].coda.iter().map(|c| c.ipa.as_str()).collect::<Vec<_>>(), vec!["h"]);
-    let final_s = lyrics_to_syllables("país", &rio);
+    let final_s = lyrics_es("país", &rio);
     assert_eq!(final_s[1].coda.iter().map(|c| c.ipa.as_str()).collect::<Vec<_>>(), vec!["s"]);
 }

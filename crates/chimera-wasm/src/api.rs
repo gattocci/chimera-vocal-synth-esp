@@ -14,8 +14,8 @@ use chimera::phonetics::sing::{self, MelismaOptions, NoteOnOptions, SongOptions,
 use chimera::phonetics::english::EnglishG2P;
 use chimera::phonetics::mandarin::MandarinLexicon;
 use chimera::phonetics::spanish::{Dialect, SpanishG2P};
-use chimera::phonetics::syllables::lyrics_to_syllables_with;
-use chimera::phonetics::{Segment, Syllable, ipa, songs, vowel_data};
+use chimera::phonetics::syllables::{Lang, lyrics_in};
+use chimera::phonetics::{Segment, Syllable, ipa, songs, turkish, vowel_data};
 use chimera::voice::human_airway::HumanAirway;
 use serde_json::{Value, json};
 use std::cell::RefCell;
@@ -27,14 +27,6 @@ struct Model {
     airway: HumanAirway,
 }
 
-/// which front-end the text calls go through (the page's voice language)
-#[derive(Clone, Copy, Default, PartialEq)]
-enum G2pLang {
-    #[default]
-    En,
-    Es,
-}
-
 #[derive(Default)]
 struct State {
     result: Vec<u8>,
@@ -42,10 +34,10 @@ struct State {
     /// (`dropModel`, from `useModel.ts`)
     models: Vec<Model>,
     next_model: usize,
-    /// the page's G2Ps: English (one dictionary, loaded once) and Spanish (rules only)
-    en: EnglishG2P,
+    /// the page's English G2P (one dictionary, loaded once)
+    g2p: EnglishG2P,
+    /// Spanish spelling rules and its selected dialect
     es: SpanishG2P,
-    lang: G2pLang,
     /// the Mandarin front end's lexicon (loaded once, when lyrics first need it)
     mandarin: MandarinLexicon,
 }
@@ -136,52 +128,62 @@ fn dispatch(st: &mut State, req: &Value) -> Res {
         // what tokenizeIpa leaves out of the text without a word: { unknown, noSound, ignoredMarks }
         "skippedIpa" => to_json(&ipa::skipped_ipa(&arg::<String>(req, "text")?)),
         "g2pLoad" => {
-            st.en.load_dict(&arg::<String>(req, "text")?);
-            Ok(json!(true))
-        }
-        "g2pLang" => {
-            let lang: String = arg(req, "lang")?;
-            st.lang = match lang.as_str() {
-                "es" => G2pLang::Es,
-                _ => G2pLang::En,
-            };
-            if let Some(d) = req.get("dialect").filter(|d| !d.is_null()) {
-                let d: Dialect = serde_json::from_value(d.clone()).map_err(|e| format!("dialect: {e}"))?;
-                st.es.set_dialect(d);
-            }
+            st.g2p.load_dict(&arg::<String>(req, "text")?);
             Ok(json!(true))
         }
         "g2pPhrases" => {
-            let text = &arg::<String>(req, "text")?;
-            let phrases = match st.lang {
-                G2pLang::En => st.en.to_phrases(text),
-                G2pLang::Es => st.es.to_phrases(text),
+            let text = arg::<String>(req, "text")?;
+            let lang = arg::<Option<Lang>>(req, "lang")?.unwrap_or_default();
+            let phrases = match lang {
+                Lang::En => st.g2p.to_phrases(&text),
+                Lang::Tr => turkish::to_phrases(&text),
+                Lang::Es => {
+                    let mut es = st.es.clone();
+                    if let Some(d) = req.get("dialect").filter(|d| !d.is_null()) {
+                        es.set_dialect(serde_json::from_value::<Dialect>(d.clone()).map_err(|e| format!("dialect: {e}"))?);
+                    }
+                    es.to_phrases(&text)
+                }
             };
             to_json(&phrases)
         }
         "g2pWord" => {
-            let word = &arg::<String>(req, "word")?;
+            let word = arg::<String>(req, "word")?;
             let reduce = arg::<Option<bool>>(req, "reduce")?.unwrap_or(true);
-            let segs = match st.lang {
-                G2pLang::En => st.en.word(word, reduce),
-                G2pLang::Es => st.es.word(word, reduce),
-            };
-            to_json(&segs)
+            let lang = arg::<Option<Lang>>(req, "lang")?.unwrap_or_default();
+            match lang {
+                Lang::En => to_json(&st.g2p.word(&word, reduce)),
+                Lang::Tr => to_json(&turkish::word(&word, true)),
+                Lang::Es => {
+                    let mut es = st.es.clone();
+                    if let Some(d) = req.get("dialect").filter(|d| !d.is_null()) {
+                        es.set_dialect(serde_json::from_value::<Dialect>(d.clone()).map_err(|e| format!("dialect: {e}"))?);
+                    }
+                    to_json(&es.word(&word, reduce))
+                }
+            }
         }
         "zhLoad" => {
             st.mandarin.load(&arg::<String>(req, "text")?);
             Ok(json!(true))
         }
-        // every built-in front end: pinyin, English or Spanish, Korean, and Mandarin once its
-        // lexicon is loaded
+        // every built-in front end: pinyin, English, Turkish or Spanish (`lang`, the language of
+        // Latin-script words; unset: English), Korean, Russian, and Mandarin once its lexicon is loaded
         "lyricsToSyllables" => {
-            let text = &arg::<String>(req, "text")?;
-            let syls = match st.lang {
-                G2pLang::En => lyrics_to_syllables_with(text, &st.en, &st.mandarin),
-                G2pLang::Es => lyrics_to_syllables_with(text, &st.es, &st.mandarin),
-            };
-            to_json(&syls)
+            let text = arg::<String>(req, "text")?;
+            let lang = arg::<Option<Lang>>(req, "lang")?.unwrap_or_default();
+            if lang == Lang::Es {
+                let mut es = st.es.clone();
+                if let Some(d) = req.get("dialect").filter(|d| !d.is_null()) {
+                    es.set_dialect(serde_json::from_value::<Dialect>(d.clone()).map_err(|e| format!("dialect: {e}"))?);
+                }
+                to_json(&lyrics_in(&text, &es, &st.mandarin, lang))
+            } else {
+                to_json(&lyrics_in(&text, &st.g2p, &st.mandarin, lang))
+            }
         }
+        // Turkish needs no dictionary: its spelling rules are the G2P
+        "trPhrases" => to_json(&turkish::to_phrases(&arg::<String>(req, "text")?)),
         // ---------------------------------------------------------------- creatures
         "creaturePreview" => {
             let id: String = arg(req, "id")?;

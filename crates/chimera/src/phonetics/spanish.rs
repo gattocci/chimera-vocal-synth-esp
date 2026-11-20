@@ -12,7 +12,7 @@
 //! and cross-word s–voicing beyond the same word.
 
 use super::english::{is_phrase_punct, split_keeping};
-use super::syllables::{Lang, WordSource};
+use super::syllables::WordSource;
 use super::{Intonation, Phrase, Segment};
 use serde::{Deserialize, Serialize};
 
@@ -188,9 +188,6 @@ impl WordSource for SpanishG2P {
         SpanishG2P::word(self, w, reduce)
     }
 
-    fn lang(&self) -> Lang {
-        Lang::Spanish
-    }
 }
 
 // ---------------------------------------------------------------- scanning

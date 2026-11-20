@@ -14,6 +14,7 @@ use super::english::js_is_space;
 use super::korean::Korean;
 use super::mandarin::{Mandarin, MandarinLexicon, Pinyin};
 use super::russian::Russian;
+use super::turkish::Turkish;
 use super::planner::is_vowel;
 use super::{Segment, Syllable};
 use serde::{Deserialize, Serialize};
@@ -42,7 +43,7 @@ pub(crate) const ONSETS_ES: &[&str] = &[
 /// Which language's onset clusters and spelling digraphs a word's syllables follow.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
-pub enum Lang {
+pub enum SyllableLang {
     English,
     Spanish,
 }
@@ -52,8 +53,8 @@ const DIGRAPHS_EN: &[&str] = &["th", "sh", "ch", "ph", "wh", "ck", "gh"];
 const DIGRAPHS_ES: &[&str] = &["rr", "ll", "ch", "qu", "gu"];
 
 /// A final silent e ("like") is not a syllable in English; Spanish final e always is.
-fn silent_e(lang: Lang) -> bool {
-    lang == Lang::English
+fn silent_e(lang: SyllableLang) -> bool {
+    lang == SyllableLang::English
 }
 
 /// One syllable of a word, before it gets its text.
@@ -67,7 +68,7 @@ pub struct SyllableParts {
 
 /// Split one word's segments into onset / nucleus / coda syllables (English onsets).
 pub fn syllabify_segments(segs: &[Segment]) -> Vec<SyllableParts> {
-    syllabify_segments_lang(segs, Lang::English)
+    syllabify_segments_lang(segs, SyllableLang::English)
 }
 
 /// A consonant cluster that can start an English syllable.
@@ -83,10 +84,10 @@ pub fn is_spanish_onset(cluster: &[Segment]) -> bool {
 }
 
 /// Split one word's segments with the selected language's legal onset clusters.
-pub fn syllabify_segments_lang(segs: &[Segment], lang: Lang) -> Vec<SyllableParts> {
+pub fn syllabify_segments_lang(segs: &[Segment], lang: SyllableLang) -> Vec<SyllableParts> {
     let is_onset: fn(&[Segment]) -> bool = match lang {
-        Lang::English => is_english_onset,
-        Lang::Spanish => is_spanish_onset,
+        SyllableLang::English => is_english_onset,
+        SyllableLang::Spanish => is_spanish_onset,
     };
     syllabify_with(segs, is_onset)
 }
@@ -121,9 +122,9 @@ pub fn syllabify_with(segs: &[Segment], is_onset: impl Fn(&[Segment]) -> bool) -
 
 // The spelling is indexed in UTF-16 code units, as the JS string was.
 /// Spanish vowels include their written accents ("camión" splits at the ió group).
-fn is_spell_vowel(c: u16, lang: Lang) -> bool {
+fn is_spell_vowel(c: u16, lang: SyllableLang) -> bool {
     "aeiouy".bytes().any(|v| v as u16 == c)
-        || (lang == Lang::Spanish && matches!(c, 0xE1 | 0xE9 | 0xED | 0xF3 | 0xFA | 0xFC)) // á é í ó ú ü
+        || (lang == SyllableLang::Spanish && matches!(c, 0xE1 | 0xE9 | 0xED | 0xF3 | 0xFA | 0xFC)) // á é í ó ú ü
 }
 fn is_spell_vowel_ci(c: u16) -> bool {
     "aeiouyAEIOUY".bytes().any(|v| v as u16 == c)
@@ -175,11 +176,11 @@ fn slice(w: &[u16], a: usize, b: usize) -> String {
 
 /// Split a written word into n chunks at its vowel groups (approximate hyphenation, English).
 pub fn split_spelling(word: &str, n: usize) -> Vec<String> {
-    split_spelling_lang(word, n, Lang::English)
+    split_spelling_lang(word, n, SyllableLang::English)
 }
 
 /// Split a written word into n chunks at its vowel groups (approximate hyphenation).
-pub fn split_spelling_lang(word: &str, n: usize, lang: Lang) -> Vec<String> {
+pub fn split_spelling_lang(word: &str, n: usize, lang: SyllableLang) -> Vec<String> {
     if n <= 1 {
         return vec![word.to_string()];
     }
@@ -202,8 +203,8 @@ pub fn split_spelling_lang(word: &str, n: usize, lang: Lang) -> Vec<String> {
     // Spanish: a run breaks where the pronunciation has two nuclei (mirroring
     // `merge_vowel_runs`: [pa-ís], [ca-e], [dí-a] split; [pia-no], [ai-re], [ciu-dad] don't)
     let mut groups: Vec<[usize; 2]> = match lang {
-        Lang::English => runs,
-        Lang::Spanish => split_es_vowel_runs(&lower, &runs),
+        SyllableLang::English => runs,
+        SyllableLang::Spanish => split_es_vowel_runs(&lower, &runs),
     };
     let len = w.len();
     // /[^aeiouy]e$/i and /[^aeiouyl]le$/i (English: a final silent e is not a syllable; the
@@ -221,8 +222,8 @@ pub fn split_spelling_lang(word: &str, n: usize, lang: Lang) -> Vec<String> {
         return out;
     }
     let digraphs = match lang {
-        Lang::English => DIGRAPHS_EN,
-        Lang::Spanish => DIGRAPHS_ES,
+        SyllableLang::English => DIGRAPHS_EN,
+        SyllableLang::Spanish => DIGRAPHS_ES,
     };
     while groups.len() > n {
         let last = groups.pop().unwrap();
@@ -251,10 +252,6 @@ pub fn split_spelling_lang(word: &str, n: usize, lang: Lang) -> Vec<String> {
 /// Where lyrics get their pronunciations: `EnglishG2P`, or any `Fn(&str, bool) -> Vec<Segment>`.
 pub trait WordSource {
     fn word(&self, w: &str, reduce: bool) -> Vec<Segment>;
-    /// which language's syllables and spelling the lyrics follow
-    fn lang(&self) -> Lang {
-        Lang::English
-    }
 }
 
 impl<F: Fn(&str, bool) -> Vec<Segment>> WordSource for F {
@@ -340,13 +337,13 @@ impl<W: WordSource> FrontEnd for Spanish<'_, W> {
         let parts: Vec<&str> = tok.split('-').filter(|p| !p.is_empty()).collect();
         let mut syls: Vec<Syllable> = Vec::new();
         for part in &parts {
-            let sy = syllabify_segments_lang(&self.0.word(&part.to_lowercase(), false), Lang::Spanish);
+            let sy = syllabify_segments_lang(&self.0.word(&part.to_lowercase(), false), SyllableLang::Spanish);
             let spell: Vec<String> = if parts.len() > 1 {
                 let mut v = vec![part.to_string()];
                 v.extend(std::iter::repeat_n("~".to_string(), sy.len().saturating_sub(1)));
                 v
             } else {
-                split_spelling_lang(part, sy.len(), Lang::Spanish)
+                split_spelling_lang(part, sy.len(), SyllableLang::Spanish)
             };
             for (i, s) in sy.into_iter().enumerate() {
                 syls.push(Syllable { text: spell.get(i).cloned().unwrap_or_else(|| "~".into()), onset: s.onset, nucleus: s.nucleus, coda: s.coda, melisma: None, word_end: false, phrase_end: false, ..Default::default() });
@@ -453,8 +450,24 @@ pub fn lyrics_to_syllables(text: &str, g2p: &impl WordSource) -> Vec<Syllable> {
 /// app, the wasm engine and the CLI all read lyrics through, so a new front end can't be missing
 /// from one of them.
 pub fn lyrics_to_syllables_with(text: &str, g2p: &impl WordSource, zh: &MandarinLexicon) -> Vec<Syllable> {
-    match g2p.lang() {
-        Lang::English => read_lyrics(text, &[&Pinyin, &English(g2p), &Korean, &Russian, &Mandarin(zh)]),
-        Lang::Spanish => read_lyrics(text, &[&Pinyin, &Spanish(g2p), &Korean, &Russian, &Mandarin(zh)]),
+    lyrics_in(text, g2p, zh, Lang::En)
+}
+
+/// The language selected for Latin-script text in Speak and Sing.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Lang {
+    #[default]
+    En,
+    Tr,
+    Es,
+}
+
+/// Route Latin-script lyrics through the selected front end; other scripts route as before.
+pub fn lyrics_in(text: &str, g2p: &impl WordSource, zh: &MandarinLexicon, lang: Lang) -> Vec<Syllable> {
+    match lang {
+        Lang::En => read_lyrics(text, &[&Pinyin, &English(g2p), &Korean, &Russian, &Mandarin(zh)]),
+        Lang::Tr => read_lyrics(text, &[&Pinyin, &Turkish, &Korean, &Russian, &Mandarin(zh)]),
+        Lang::Es => read_lyrics(text, &[&Pinyin, &Spanish(g2p), &Korean, &Russian, &Mandarin(zh)]),
     }
 }

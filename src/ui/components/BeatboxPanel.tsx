@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useStore } from "../store.ts";
 import { engine } from "../../audio/AudioEngine.ts";
+import { inPlugin } from "../../audio/pluginBridge.ts";
 import { BEAT_SOUNDS, BEAT_PRESETS, formatBeat, parseBeat, type Airstream } from "../../wasm/engine.ts";
 import { Keys, MidiButton } from "./Keys.tsx";
 import { ActionBar, PrimaryButton } from "./ActionBar.tsx";
@@ -141,13 +142,16 @@ function BeatActions() {
   const playing = useStore((s) => s.beat.playing);
   const preset = useStore((s) => s.beat.preset);
   const setPlaying = useStore((s) => s.setBeatPlaying);
+  const follow = useStore((s) => s.beat.follow);
+  const following = useStore((s) => s.beat.following);
+  const setFollow = useStore((s) => s.setBeatFollow);
   const loadPreset = useStore((s) => s.loadBeatPreset);
   const mic = useStore((s) => s.mic);
   const setMic = useStore((s) => s.setMic);
-  const press = () => setPlaying(!playing);
+  const press = () => !following && setPlaying(!playing);
   return (
     <ActionBar label="Beat" onSpace={press}>
-      <PrimaryButton label="Play beat" playing={playing} onClick={press} />
+      <PrimaryButton label="Play beat" playing={playing} busy={following ? "With host" : null} title={following ? "The host's transport is running the beat" : undefined} onClick={press} />
       <Menu
         label="Pattern"
         value={preset ?? ""}
@@ -158,6 +162,11 @@ function BeatActions() {
       <Chip on={mic} onClick={() => setMic(!mic)} title="Close-mic effect: the bass, presence and squash of a mic held to the lips">
         Mic FX
       </Chip>
+      {inPlugin && (
+        <Chip on={follow} onClick={() => setFollow(!follow)} title="Run the pattern with the host's transport, at its tempo">
+          Follow
+        </Chip>
+      )}
     </ActionBar>
   );
 }
@@ -181,7 +190,7 @@ function Transport() {
             {
               name: "Tempo",
               encoders: [
-                { label: "Tempo", value: beat.bpm, min: 60, max: 240, onChange: (v) => setTempo({ bpm: Math.round(v) }), format: (v) => ({ value: String(Math.round(v)), unit: "bpm" }) },
+                { label: "Tempo", value: beat.following ? beat.hostBpm : beat.bpm, min: 60, max: 240, onChange: (v) => setTempo({ bpm: Math.round(v) }), format: (v) => ({ value: String(Math.round(v)), unit: "bpm" }) },
                 { label: "Swing", value: beat.swing, min: 0, max: 0.6, onChange: (v) => setTempo({ swing: v }), format: (v) => ({ value: String(Math.round(v * 100)), unit: "%" }) },
               ],
             },
