@@ -5,8 +5,13 @@
 //! sits directly on the stressed segment (the syllable's vowel), as `Segment.stress` carries it.
 
 use chimera::phonetics::spanish::{CASTELLANO, Dialect, Ll, NEUTRO, RIOPLATENSE, SpanishG2P};
-use chimera::phonetics::syllables::{Lang, lyrics_to_syllables, split_spelling, split_spelling_lang, syllabify_segments_lang};
+use chimera::phonetics::mandarin::MandarinLexicon;
+use chimera::phonetics::syllables::{Lang, SyllableLang, lyrics_in, split_spelling, split_spelling_lang, syllabify_segments_lang};
 use chimera::phonetics::Segment;
+
+fn lyrics_es(text: &str, g: &SpanishG2P) -> Vec<chimera::phonetics::Syllable> {
+    lyrics_in(text, g, &MandarinLexicon::new(), Lang::Es)
+}
 
 /// one word through the real phrase path (word-level allophones included), IPA with stress marks
 fn say(g: &SpanishG2P, w: &str) -> String {
@@ -53,6 +58,11 @@ fn soft_and_hard_c_and_g() {
     let g = g2p();
     // soft c → [s] (seseo); hard c → [k]; "cc" = [ks]
     assert_eq!(say(&g, "cine"), "sˈine");
+    // accented front vowels still make c/g soft (the user's Speak report: crecí → kreki)
+    assert_eq!(say(&g, "crecí"), "kɾesˈi");
+    assert_eq!(say(&g, "césped"), "sˈespeð");
+    assert_eq!(say(&g, "gélido"), "xˈeliðo");
+    assert_eq!(say(&g, "régimen"), "rˈeximen");
     assert_eq!(say(&g, "casa"), "kˈasa");
     assert_eq!(say(&g, "cocción"), "koksjˈon");
     assert_eq!(say(&g, "química"), "kˈimika");
@@ -65,6 +75,27 @@ fn soft_and_hard_c_and_g() {
     assert_eq!(say(&g, "agenda"), "axˈenda");
     // x = [ks]
     assert_eq!(say(&g, "examen"), "eksˈamen");
+    assert_eq!(say(&g, "taxi"), "tˈaksi");
+    // x retains its historical [x] in México and its derivatives
+    assert_eq!(say(&g, "México"), "mˈexiko");
+    assert_eq!(say(&g, "mexicano"), "mexikˈano");
+
+    let word = |w: &str| g.word(w, false);
+    let phone = |w: &str, ipa: &str| word(w).into_iter().find(|s| s.ipa == ipa).unwrap();
+    assert_eq!(phone("chico", "tʃ").length, Some(1.2));
+    assert_eq!(phone("hacha", "tʃ").length, Some(1.2));
+    assert_eq!(phone("ancho", "tʃ").length, Some(1.2));
+    assert_eq!(phone("leche", "tʃ").length, None);
+    assert_eq!(phone("noche", "tʃ").length, None);
+    assert_eq!(word("país").last().unwrap().length, Some(1.25));
+    assert_eq!(word("más").last().unwrap().length, None);
+
+    // The rule is shared by all three presets; Castellano changes soft c to [θ].
+    for (dialect, expected) in [(NEUTRO, "kɾesˈi"), (RIOPLATENSE, "kɾesˈi"), (CASTELLANO, "kɾeθˈi")] {
+        let mut dialect_g2p = SpanishG2P::new();
+        dialect_g2p.set_dialect(dialect);
+        assert_eq!(say(&dialect_g2p, "crecí"), expected);
+    }
 }
 
 #[test]
@@ -95,6 +126,14 @@ fn tap_and_trill_rules() {
     assert_eq!(say(&g, "enredo"), "enrˈeðo");
     assert_eq!(say(&g, "alrededor"), "alreðeðˈoɾ");
     assert_eq!(say(&g, "Israel"), "izraˈel");
+    let trill = g.word("guerra", false).into_iter().find(|s| s.ipa == "r").unwrap();
+    let initial_trill = g.word("régimen", false).into_iter().find(|s| s.ipa == "r").unwrap();
+    let tap = g.word("caro", false).into_iter().find(|s| s.ipa == "ɾ").unwrap();
+    let cluster_tap = g.word("crecí", false).into_iter().find(|s| s.ipa == "ɾ").unwrap();
+    assert_eq!(trill.length, Some(1.4));
+    assert_eq!(initial_trill.length, None);
+    assert_eq!(tap.length, None);
+    assert_eq!(cluster_tap.length, Some(1.4));
 }
 
 #[test]
@@ -193,9 +232,10 @@ fn dialect_switches() {
     // zheísmo and lleísta variants
     assert_eq!(say(&g2p(Dialect { seseo: true, ll: Ll::Zheismo, aspirated_s: false }), "llave"), "ʒˈaβe");
     assert_eq!(say(&g2p(Dialect { seseo: true, ll: Ll::Lleista, aspirated_s: false }), "llave"), "ʎˈaβe");
-    // aspirated coda s: before a consonant and word-finally, but not before a vowel
+    // Rioplatense /s/ weakens before a consonant, while word-final /s/ remains audible
     assert_eq!(say(&g2p(RIOPLATENSE), "mismo"), "mˈihmo");
-    assert_eq!(say(&g2p(RIOPLATENSE), "más"), "mˈah");
+    assert_eq!(say(&g2p(RIOPLATENSE), "más"), "mˈas");
+    assert_eq!(say(&g2p(RIOPLATENSE), "país"), "paˈis");
     assert_eq!(say(&g2p(RIOPLATENSE), "casa"), "kˈasa");
     // the default is neutro: seseo, jeísmo, s kept
     assert_eq!(say(&g2p(NEUTRO), "llave"), "ʝˈaβe");
@@ -209,48 +249,48 @@ fn dialect_switches() {
 fn spanish_syllables_for_singing() {
     let g = g2p();
     // consonant–glide onsets and digraph codas split the Spanish way
-    let parts = syllabify_segments_lang(&g.word("tierra", false), Lang::Spanish);
+    let parts = syllabify_segments_lang(&g.word("tierra", false), SyllableLang::Spanish);
     let nuclei: Vec<String> = parts.iter().map(|p| p.nucleus.ipa.clone()).collect();
     assert_eq!(nuclei, vec!["e".to_string(), "a".to_string()]); // tje-rra: two nuclei
     let onsets: Vec<String> = parts.iter().map(|p| p.onset.iter().map(|s| s.ipa.as_str()).collect()).collect();
     assert_eq!(onsets, vec!["tj".to_string(), "r".to_string()]);
     // the hiatus keeps two nuclei ("pa-ís")
-    assert_eq!(syllabify_segments_lang(&g.word("país", false), Lang::Spanish).len(), 2);
+    assert_eq!(syllabify_segments_lang(&g.word("país", false), SyllableLang::Spanish).len(), 2);
     // spelling splits keep the digraph right ("gue-rra") and "qu" whole ("que-so")
-    assert_eq!(split_spelling_lang("guerra", 2, Lang::Spanish), vec!["gue", "rra"]);
-    assert_eq!(split_spelling_lang("queso", 2, Lang::Spanish), vec!["que", "so"]);
-    assert_eq!(split_spelling_lang("camión", 2, Lang::Spanish), vec!["ca", "mión"]);
-    assert_eq!(split_spelling_lang("tierra", 2, Lang::Spanish), vec!["tie", "rra"]);
+    assert_eq!(split_spelling_lang("guerra", 2, SyllableLang::Spanish), vec!["gue", "rra"]);
+    assert_eq!(split_spelling_lang("queso", 2, SyllableLang::Spanish), vec!["que", "so"]);
+    assert_eq!(split_spelling_lang("camión", 2, SyllableLang::Spanish), vec!["ca", "mión"]);
+    assert_eq!(split_spelling_lang("tierra", 2, SyllableLang::Spanish), vec!["tie", "rra"]);
     // a hiatus breaks the written run too ([pa-ís], [le-er], [ca-e]); the diphthong stays whole
-    assert_eq!(split_spelling_lang("país", 2, Lang::Spanish), vec!["pa", "ís"]);
-    assert_eq!(split_spelling_lang("leer", 2, Lang::Spanish), vec!["le", "er"]);
-    assert_eq!(split_spelling_lang("cae", 2, Lang::Spanish), vec!["ca", "e"]);
-    assert_eq!(split_spelling_lang("ruido", 2, Lang::Spanish), vec!["rui", "do"]);
+    assert_eq!(split_spelling_lang("país", 2, SyllableLang::Spanish), vec!["pa", "ís"]);
+    assert_eq!(split_spelling_lang("leer", 2, SyllableLang::Spanish), vec!["le", "er"]);
+    assert_eq!(split_spelling_lang("cae", 2, SyllableLang::Spanish), vec!["ca", "e"]);
+    assert_eq!(split_spelling_lang("ruido", 2, SyllableLang::Spanish), vec!["rui", "do"]);
     // "güi" stays whole (the ü is a glide): pin-güi-no
-    assert_eq!(split_spelling_lang("pingüino", 3, Lang::Spanish), vec!["pin", "güi", "no"]);
+    assert_eq!(split_spelling_lang("pingüino", 3, SyllableLang::Spanish), vec!["pin", "güi", "no"]);
     // English spelling is untouched (its final e is silent; the Spanish final e never is)
     assert_eq!(split_spelling("little", 2), vec!["lit", "tle"]);
-    assert_eq!(split_spelling_lang("café", 2, Lang::Spanish), vec!["ca", "fé"]);
+    assert_eq!(split_spelling_lang("café", 2, SyllableLang::Spanish), vec!["ca", "fé"]);
 }
 
 #[test]
 fn spanish_lyrics_to_syllables() {
     let g = g2p();
     // one syllable per note; the display text keeps its spelling (and its case)
-    let syls = lyrics_to_syllables("La luna llena", &g);
+    let syls = lyrics_es("La luna llena", &g);
     let texts: Vec<&str> = syls.iter().map(|s| s.text.as_str()).collect();
     assert_eq!(texts, vec!["La", "lu", "na", "lle", "na"]);
     // the hiatus "país" gives two notes
-    let syls = lyrics_to_syllables("país", &g);
+    let syls = lyrics_es("país", &g);
     assert_eq!(syls.len(), 2);
     assert_eq!(syls[0].text, "pa");
     assert_eq!(syls[1].text, "ís");
     // accented letters are word characters in lyrics
-    assert!(lyrics_to_syllables("camión", &g).len() >= 2);
+    assert!(lyrics_es("camión", &g).len() >= 2);
     // the sung split keeps the diphthong on one note's text
-    assert_eq!(lyrics_to_syllables("pingüino", &g).iter().map(|s| s.text.as_str()).collect::<Vec<_>>(), vec!["pin", "güi", "no"]);
+    assert_eq!(lyrics_es("pingüino", &g).iter().map(|s| s.text.as_str()).collect::<Vec<_>>(), vec!["pin", "güi", "no"]);
     // a phrase break still ends the word before it
-    let syls = lyrics_to_syllables("corazón, corazón", &g);
+    let syls = lyrics_es("corazón, corazón", &g);
     assert!(syls[2].phrase_end);
 }
 
@@ -284,15 +324,17 @@ fn sung_words_keep_their_allophones() {
     // the singing front end applies the word's allophones before it splits syllables: [z], [ŋ]
     // and the fricatives are not speech-only
     let joined = |w: &str| {
-        lyrics_to_syllables(w, &g).iter().map(|s| {
+        lyrics_es(w, &g).iter().map(|s| {
             s.onset.iter().chain(std::iter::once(&s.nucleus)).chain(s.coda.iter()).map(|x| x.ipa.as_str()).collect::<String>()
         }).collect::<Vec<_>>().join("|")
     };
     assert_eq!(joined("mismo"), "miz|mo");
     assert_eq!(joined("banco"), "baŋ|ko");
-    // the rioplatense coda s breathes in singing too
+    // the rioplatense coda /s/ weakens before a consonant in singing, but stays /s/ at word end
     let mut rio = SpanishG2P::new();
     rio.set_dialect(RIOPLATENSE);
-    let syls = lyrics_to_syllables("más", &rio);
-    assert_eq!(syls[0].coda.iter().map(|c| c.ipa.as_str()).collect::<Vec<_>>(), vec!["h"]);
+    let internal_s = lyrics_es("mismo", &rio);
+    assert_eq!(internal_s[0].coda.iter().map(|c| c.ipa.as_str()).collect::<Vec<_>>(), vec!["h"]);
+    let final_s = lyrics_es("país", &rio);
+    assert_eq!(final_s[1].coda.iter().map(|c| c.ipa.as_str()).collect::<Vec<_>>(), vec!["s"]);
 }

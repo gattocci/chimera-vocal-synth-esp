@@ -143,6 +143,19 @@ async function run(viewport: { width: number; height: number }, tag: string) {
   await box_.fill("ɕiɛ˥˩");
   await ipaChip.click(); // and off
   if (await noticeText()) errors.push(`[${tag}] turning IPA mode off left the notice: ${await noticeText()}`);
+  // one language for Speak and Sing: TR chosen in Speak is lit in Sing, and still chosen when Speak
+  // comes back (it was Speak's own state, reset whenever the tab remounted)
+  const tr = (scope: string) => page.locator(scope).getByRole("button", { name: "Turkish" });
+  await tr(".right-speak").click();
+  await page.getByRole("radio", { name: "Sing" }).click();
+  await page.waitForTimeout(200);
+  const inSing = await tr(".s-lyrics").getAttribute("aria-pressed");
+  await page.getByRole("radio", { name: "Speak" }).click();
+  await page.waitForTimeout(200);
+  const speakAgain = { chip: await tr(".right-speak").getAttribute("aria-pressed"), box: await sayBox.inputValue() };
+  logs.push(`[${tag}] language: TR in Speak, in Sing ${inSing}; Speak again ${JSON.stringify(speakAgain)}`);
+  if (inSing !== "true" || speakAgain.chip !== "true" || speakAgain.box !== "Merhaba, nasılsın?") errors.push(`[${tag}] Speak and Sing don't share the language (Sing ${inSing}, Speak again ${JSON.stringify(speakAgain)})`);
+  await page.locator(".right-speak").getByRole("button", { name: "English" }).click();
   // sing mode: a key sings the marked syllable and moves the cursor; legato; a demo song
   await page.getByRole("radio", { name: "Sing" }).click();
   await page.waitForTimeout(600);

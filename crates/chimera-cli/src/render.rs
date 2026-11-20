@@ -22,8 +22,10 @@ use chimera::phonetics::sing::{
     plan_song,
 };
 use chimera::phonetics::songs::DEMO_SONGS;
-use chimera::phonetics::syllables::lyrics_to_syllables;
-use chimera::phonetics::{Intonation, Plan, Syllable};
+use chimera::phonetics::mandarin::{MandarinLexicon, is_han};
+use chimera::phonetics::syllables::{Lang, lyrics_in, lyrics_to_syllables};
+use chimera::phonetics::turkish;
+use chimera::phonetics::{Intonation, Phrase, Plan, Syllable};
 use chimera::voice::human_voice::{HumanVoice, SCOPE_POINTS, SourcePatch, VoiceTelemetry};
 use std::io::Read;
 use std::time::Instant;
@@ -46,6 +48,25 @@ pub fn g2p() -> Result<EnglishG2P, String> {
     let mut g = EnglishG2P::new();
     g.load_dict(&text);
     Ok(g)
+}
+
+/// The Mandarin front end's lexicon (public/data/mandarin.txt.gz, from tools/build-mandarin.ts).
+pub fn zh() -> Result<MandarinLexicon, String> {
+    let path = repo_path("public/data/mandarin.txt.gz");
+    let gz = std::fs::read(&path).map_err(|e| format!("{path}: {e}"))?;
+    let mut text = String::new();
+    flate2::read::GzDecoder::new(&gz[..]).read_to_string(&mut text).map_err(|e| format!("{path}: {e}"))?;
+    let mut l = MandarinLexicon::new();
+    l.load(&text);
+    Ok(l)
+}
+
+/// Lyrics → syllables through every built-in front end, Latin script read as `lang` (the Mandarin
+/// lexicon only when needed).
+pub fn sung_lyrics(text: &str, lang: Lang) -> Result<Vec<Syllable>, String> {
+    let g = g2p()?;
+    let lex = if text.chars().any(is_han) { zh()? } else { MandarinLexicon::new() };
+    Ok(lyrics_in(text, &g, &lex, lang))
 }
 
 /// A file name from a song's name: letters of any script, everything else as one "-".
@@ -158,9 +179,13 @@ pub fn text_f0(body_name: &str) -> f64 {
 /// Say `text` the way `render text` does: CMUdict G2P, the phrase planner from t0 = 50 ms, the
 /// body's speaking f0, 300 ms of tail. `chimera compare tsp` measures exactly these renders.
 pub fn say(g: &EnglishG2P, text: &str, body_name: &str) -> Result<Spoken, String> {
+    say_phrases(&g.to_phrases(text), body_name)
+}
+
+/// Say phrases from any G2P the way `render text` does (see [`say`]).
+pub fn say_phrases(phrases: &[Phrase], body_name: &str) -> Result<Spoken, String> {
     let b = body(body_name)?;
     let f0 = text_f0(body_name);
-    let phrases = g.to_phrases(text);
     let shown: Vec<String> = phrases
         .iter()
         .map(|p| {
@@ -222,6 +247,20 @@ pub fn text(ctx: &Ctx, a: &[String]) -> Result<(), String> {
     Ok(())
 }
 
+/// Turkish text through its spelling rules and the phrase planner.
+/// `render turkish <out> ["Türkçe metin."] [body]`
+pub fn turkish(ctx: &Ctx, a: &[String]) -> Result<(), String> {
+    let name = arg(a, 0, "out/turkish");
+    let text = arg(a, 1, "Merhaba, nasılsın?");
+    let body_name = arg(a, 2, "male");
+    let s = say_phrases(&turkish::to_phrases(text), body_name)?;
+    println!("{}", s.shown);
+    let file = wav_name(name);
+    ctx.write_wav(&file, &s.out)?;
+    println!("wrote {file}  {} s", fixed(s.out.len() as f64 / FS, 2));
+    Ok(())
+}
+
 /// The demo songs, and a live-style key sequence. `render song [outdir] [body]`
 pub fn song(ctx: &Ctx, a: &[String]) -> Result<(), String> {
     let out_dir = arg(a, 0, "out/song");
@@ -268,6 +307,7 @@ pub fn song(ctx: &Ctx, a: &[String]) -> Result<(), String> {
                 bpm: song.bpm,
                 t0: 0.3,
                 vibrato: 35.0,
+                ..Default::default()
             },
         );
         v.schedule(&plan.gestures);
@@ -500,8 +540,8 @@ fn render_tracked(v: &mut HumanVoice, out: &mut [f32], artic: bool, tele: bool) 
 /// writes the articulators over time (`{"rate", "body", "keys", "frames"}`), to animate a face in
 /// sync; `--tele` writes the voice's whole telemetry over time (see `TeleRecorder`), which the
 /// app's duet page replays on a 3D head. The melody file may give `"syllables"` (IPA
-/// onset/nucleus/coda per sounding note) instead of English `"lyrics"`: a language front end's
-/// output (docs/language-front-ends.md).
+/// onset/nucleus/coda per sounding note, optional `"pitch"` bends) instead of `"lyrics"`: a
+/// language front end's output (docs/language-front-ends.md).
 pub fn notes(ctx: &Ctx, a: &[String]) -> Result<(), String> {
     let mut artic_out: Option<String> = None;
     let mut tele_out: Option<String> = None;
@@ -526,13 +566,16 @@ pub fn notes(ctx: &Ctx, a: &[String]) -> Result<(), String> {
     let bpm = j["bpm"].as_f64().ok_or("bpm missing")?;
     let vibrato = j["vibrato"].as_f64().unwrap_or(35.0);
     let raw: Vec<[f64; 2]> = serde_json::from_value(j["notes"].clone()).map_err(|e| format!("notes: {e}"))?;
-    // "syllables" sing what a language front end wrote; otherwise the lyrics go through the
-    // English front end (the pronouncing dictionary)
+    // "syllables" sing what a language front end wrote; otherwise the lyrics go through the front
+    // ends, Latin script read as "lang" ("en", the default, or "tr")
     let syl: Vec<Syllable> = if j.get("syllables").is_some() {
         serde_json::from_value(j["syllables"].clone()).map_err(|e| format!("syllables: {e}"))?
     } else {
-        let g = g2p()?;
-        lyrics_to_syllables(j["lyrics"].as_str().ok_or("lyrics missing")?, &g)
+        let lang = match j.get("lang") {
+            None => Lang::En,
+            Some(l) => serde_json::from_value(l.clone()).map_err(|e| format!("lang: {e}"))?,
+        };
+        sung_lyrics(j["lyrics"].as_str().ok_or("lyrics missing")?, lang)?
     };
     let sounding = raw.iter().filter(|n| n[0] > 0.0).count();
     if syl.len() != sounding {
@@ -557,7 +600,7 @@ pub fn notes(ctx: &Ctx, a: &[String]) -> Result<(), String> {
         if phrase.is_empty() {
             return;
         }
-        let plan = plan_song(phrase, &SongOptions { body: body_name.into(), bpm, t0: start, vibrato });
+        let plan = plan_song(phrase, &SongOptions { body: body_name.into(), bpm, t0: start, vibrato, ..Default::default() });
         v.schedule(&plan.gestures);
         *end = js_max(*end, plan.end);
         phrase.clear();

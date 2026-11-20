@@ -119,6 +119,21 @@ fn hangul_sings_one_syllable_per_block_with_korean_sound_rules() {
 }
 
 #[test]
+fn hangul_typed_as_jamo_sings_like_its_blocks() {
+    // decomposed text (NFD: each block as its letters, conjoining jamo) used to be skipped whole,
+    // so "한국 노래" sang nothing (#132)
+    let nfd = "\u{1112}\u{1161}\u{11AB}\u{1100}\u{116E}\u{11A8} \u{1102}\u{1169}\u{1105}\u{1162}";
+    assert_eq!(sung(nfd), sung("한국 노래"));
+    let texts: Vec<String> = lyrics_to_syllables(nfd, &word).into_iter().map(|s| s.text).collect();
+    assert_eq!(texts, ["한", "국", "노", "래"]);
+    // a block with its final typed as a letter, and the sound rules across jamo blocks
+    assert_eq!(sung("머\u{11A8}어"), sung("먹어"));
+    // a block with a letter modern Korean dropped (here ㆍ) has no block and isn't read; the
+    // blocks around it still are
+    assert_eq!(sung("사\u{1105}\u{119E}\u{11B7} 노래"), sung("사 노래"));
+}
+
+#[test]
 fn korean_stops_stay_three_ways_apart_word_initially() {
     // word-initially all three are voiceless: aspirated long, lax briefly, tense not at all
     // (불 fire, 풀 grass, 뿔 horn); they used to sing as pul, pul and bul
@@ -168,4 +183,31 @@ fn hand_written_syllables_may_leave_out_word_and_phrase_ends() {
     let s: chimera::phonetics::Syllable = serde_json::from_str(r#"{"text": "풀", "onset": [{"ipa": "p", "aspirated": true, "vot": 0.09}], "nucleus": {"ipa": "u"}, "coda": [{"ipa": "l"}]}"#).unwrap();
     assert!(!s.word_end && !s.phrase_end);
     assert_eq!(s.onset[0].vot, Some(0.09));
+}
+
+/// A front end that shares English's letters but reads only words in capitals (as pinyin reads
+/// only words with tones).
+struct Shouting;
+impl chimera::phonetics::syllables::FrontEnd for Shouting {
+    fn starts(&self, c: char) -> bool {
+        c.is_ascii_alphabetic()
+    }
+    fn claims(&self, word: &str) -> bool {
+        word.chars().all(|c| c.is_ascii_uppercase())
+    }
+    fn word(&self, word: &str) -> Vec<chimera::phonetics::Syllable> {
+        vec![chimera::phonetics::Syllable { text: format!("!{word}"), nucleus: Segment::new("a"), ..Default::default() }]
+    }
+}
+
+#[test]
+fn a_declined_word_goes_to_the_next_front_end_and_nothing_is_lost() {
+    use chimera::phonetics::syllables::{English, read_lyrics};
+    let g2p = chimera::phonetics::english::EnglishG2P::new();
+    let texts: Vec<String> = read_lyrics("HEY there LOUD", &[&Shouting, &English(&g2p)]).into_iter().map(|s| s.text).collect();
+    assert_eq!(texts, ["!HEY", "there", "!LOUD"]);
+    // the front end that declined a word can't claim a piece of it: "MIXed" is English's, not a
+    // shouted "MIX" and "ed"
+    let texts: Vec<String> = read_lyrics("MIXed", &[&Shouting, &English(&g2p)]).into_iter().map(|s| s.text).collect();
+    assert!(texts.iter().all(|t| !t.starts_with('!')), "{texts:?}");
 }

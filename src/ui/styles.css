@@ -128,8 +128,9 @@ input {
 
 .topbar-right {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 18px;
+  gap: 8px 18px;
 }
 
 .volume {
@@ -1027,7 +1028,7 @@ body {
 }
 
 .topbar-right {
-  gap: 14px;
+  gap: 8px 14px;
 }
 
 .volume input {
@@ -1142,6 +1143,21 @@ body {
   display: inline-flex;
   color: var(--text-dim);
   transition: color 120ms, filter 120ms;
+}
+
+.plugin-link {
+  color: var(--text-dim);
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: color 120ms, text-shadow 120ms;
+}
+
+.plugin-link:hover {
+  color: var(--text);
+  text-shadow: var(--glow-blue);
 }
 
 .repo-link:hover {
@@ -1934,7 +1950,8 @@ input[type="range"]::-moz-range-thumb {
   letter-spacing: 0.04em;
 }
 
-.vowel-pick {
+.vowel-pick,
+.lang-pick {
   display: flex;
   gap: 4px;
 }
@@ -2763,4 +2780,113 @@ input[type="range"]::-moz-range-thumb {
   .duet-head .screen-head {
     padding: 7px 8px 0;
   }
+}
+
+/* ---------- the plugin window's grip */
+/* the page zooms out to fit (docs/plugin.md, "Window size"), but text shrinks less than the rest of it
+   on a display that isn't Retina, so the wheel can still reach what's below; with a mouse macOS would
+   show a scrollbar here, beside the grip */
+html.plugin-page:not(.in-browser) {
+  scrollbar-width: none;
+}
+html.plugin-page:not(.in-browser)::-webkit-scrollbar {
+  display: none;
+}
+/* on Linux the page is in a web browser (crates/chimera-plugin/src/browser.rs), whose window resizes itself */
+html.in-browser .resize-grip {
+  display: none;
+}
+
+/* in from the corner, because macOS keeps the last dozen points or so of a resizable window's corner
+   for resizing that window, and a drag there never reaches the page; larger than what's drawn, because
+   it shrinks with the page's zoom (measured in REAPER by crates/chimera-plugin/host-test/run.sh) */
+.resize-grip {
+  position: fixed;
+  right: 6px;
+  bottom: 6px;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 40;
+  color: var(--blue-mid);
+  cursor: nwse-resize;
+  touch-action: none;
+}
+.resize-grip:hover {
+  color: var(--white);
+}
+.resize-grip svg {
+  display: block;
+}
+
+/* ---------- the plugin's spoken lines: one chip per line, cut short if it's long */
+.say-lined {
+  gap: 4px;
+}
+.say-lines {
+  min-height: 26px;
+  max-height: 26px;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+.say-lines::-webkit-scrollbar {
+  display: none;
+}
+.say-lines > * {
+  flex: none;
+}
+.say-line {
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------- the action bar in the plugin: one row, and lower, since a window can't scroll */
+.in-plugin .act-row {
+  flex-wrap: nowrap;
+}
+.in-plugin .act-row > * {
+  min-width: 0;
+}
+.in-plugin .right .action-bar .screen-body {
+  padding: 5px 10px;
+}
+.in-plugin .act-primary {
+  flex: none;
+  min-height: 34px;
+  padding: 5px 16px 5px 12px;
+  font-size: 15px;
+}
+
+/* ---------- Beatbox in the plugin: a window has to show it all without scrolling, so the pads
+   spread across the width and the waterfall takes the room beside the transport */
+.in-plugin .right-beatbox {
+  grid-template-columns: minmax(0, 1fr) 272px;
+  /* no fr on the sequencer: fr tracks keep their ratio, so its minimum would inflate the waterfall */
+  grid-template-rows: auto minmax(min-content, 22%) minmax(min-content, 1fr) auto auto;
+  grid-template-areas: "act act" "seq seq" "wf transport" "pads pads" "keys keys";
+}
+/* ten rows of a readable height: its own rows would share out whatever it's given */
+.in-plugin .s-seq .screen-body {
+  min-height: 136px;
+}
+.in-plugin .s-pads .pads {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+.in-plugin .s-pads .pad {
+  min-height: 44px;
+}
+/* each pad's tooltip still says how the sound is made */
+.in-plugin .s-pads .pad-air {
+  display: none;
+}
+.in-plugin .sbn input {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
 }

@@ -258,6 +258,35 @@ describe("Sing mode, live keys", () => {
     sing().setLyrics("Hello there");
   });
 
+  test("Turkish lyrics: TR reads them and a tune sings them; a demo song is read as English, and the player's language comes back with a mood", async () => {
+    const { TUNES } = await import("../src/song/tunes.ts");
+    const { DEFAULT_LYRICS } = await import("../src/ui/singing.ts");
+    voice = new WasmVoice(FS);
+    const sing = useSing.getState;
+    sing().setTune("joyful");
+    sing().setLyrics(DEFAULT_LYRICS);
+    // the opening words give way to Turkish's, and Turkish letters are read
+    sing().setLang("tr");
+    expect(sing().lyrics).toBe("Merhaba, ben havadan yapılmış bir sesim.");
+    expect(sing().syllables.map((s) => s.text).slice(0, 5)).toEqual(["Mer", "ha", "ba", "ben", "ha"]);
+    sing().setLyrics("çok güzel");
+    expect(sing().syllables.map((s) => s.text)).toEqual(["çok", "gü", "zel"]);
+    expect(await playTune("joyful", MALE, () => Promise.resolve())).toBe(true);
+    expect(sing().syllables.map((s) => s.text)).toEqual(["çok", "gü", "zel"]);
+    stopSinging();
+    // a demo song in English brings its words, read as English
+    const song = TUNES.find((t) => t.lyrics !== undefined && /^[ -~\s]*$/.test(t.lyrics))!;
+    sing().setTune(song.id);
+    expect(sing().lang).toBe("en");
+    expect(sing().lyrics).toBe(song.lyrics!);
+    sing().setTune("joyful");
+    expect(sing().lang).toBe("tr");
+    expect(sing().lyrics).toBe("çok güzel");
+    sing().setLang("en");
+    sing().setTune("dreamy");
+    sing().setLyrics("Hello there");
+  });
+
   test("empty lyrics sing the tune on la, highlighting nothing", async () => {
     voice = new WasmVoice(FS);
     const sing = useSing.getState;

@@ -7,7 +7,9 @@ import { defaultF0, PRESETS, bodyLabel, type BodyMix } from "../body.ts";
 import { getModel } from "../useModel.ts";
 import { VoiceModel } from "../analysis.ts";
 import { NEUTRAL } from "../../wasm/engine.ts";
-import { speakText, speakingNow, stopSpeaking, setVoiceLang, type VoiceLang } from "../speech.ts";
+import { speakText, speakingNow, stopSpeaking } from "../speech.ts";
+import { useSing } from "../singing.ts";
+import type { Lang } from "../../wasm/types.ts";
 import { useStore } from "../store.ts";
 import { Chip } from "./Screen.tsx";
 
@@ -36,7 +38,8 @@ export function ScenePage() {
   const [lines, setLines] = useState(initialLines);
   const [title, setTitle] = useState("Escena de prueba");
   const [stageColor, setStageColor] = useState("#071522");
-  const [lang, setLang] = useState<VoiceLang>("es");
+  const [lang, setLang] = useState<Lang>("es");
+  const setVoiceLanguage = useSing((s) => s.setLang);
   const [rate, setRate] = useState(1);
   const [active, setActive] = useState<number | null>(null);
   const [lineNow, setLineNow] = useState(-1);
@@ -67,7 +70,7 @@ export function ScenePage() {
     }
     const token = ++run.current;
     setBusy(true);
-    setVoiceLang(lang);
+    setVoiceLanguage(lang);
     try {
       await useStore.getState().start();
       if (!useStore.getState().started) return;
@@ -129,7 +132,7 @@ export function ScenePage() {
             {busy ? "Detener escena" : "Reproducir escena"}
           </button>
           <label>Idioma
-            <select value={lang} onChange={(e) => setLang(e.target.value as VoiceLang)}>
+            <select value={lang} onChange={(e) => setLang(e.target.value as Lang)}>
               <option value="es">Español</option><option value="en">English</option>
             </select>
           </label>
