@@ -337,7 +337,8 @@ try {
   // Beatbox's main button, and the pattern and tempo it shows (main's action bar and Tempo screen)
   const playButton = page.locator(".right-beatbox .act-primary");
   const pattern = () => page.getByRole("combobox", { name: "Pattern" }).evaluate((s: HTMLSelectElement) => s.selectedOptions[0]?.textContent ?? "");
-  const tempoShown = () => page.locator(".s-transport").textContent().then((t) => t ?? "");
+  // what shows (innerText: not the encoder readout's hidden sizing copies, and in the CSS's capitals)
+  const tempoShown = () => page.locator(".s-transport").innerText();
   const beatChip = (name: string) => page.locator(".right-beatbox .action-bar .chip", { hasText: name });
   const playhead = () => page.locator(".seq-row").first().locator(".cell.now").count();
   check("nothing runs yet", (await playhead()) === 0 && (await playButton.textContent()) === "Play beat");
@@ -351,7 +352,7 @@ try {
   await host("tempo", 140);
   await host("play");
   await until("the host's transport runs it", async () => (await playhead()) === 1 && (await playButton.textContent()) === "With host");
-  await until("at the host's tempo", async () => /(^|\D)140\s*bpm/.test(await tempoShown()));
+  await until("at the host's tempo", async () => /(^|\D)140\s*bpm/i.test(await tempoShown()));
   check("and the button stands aside", await playButton.isDisabled());
   // the playhead moves in step with the transport
   const steps = new Set<number>();
@@ -419,7 +420,7 @@ try {
   const withBeat = (await state()).settings;
   withBeat.beat = { steps: [{ id: "t" }, null, { id: "Pf" }, null], bpm: 77, swing: 0.1, preset: null, mic: false, follow: false };
   await host("restore", JSON.stringify(withBeat));
-  await until("a restore brings its beat", async () => /Your beat/.test(await pattern()) && /(^|\D)77\s*bpm/.test(await tempoShown()) && (await page.locator(".seq-row").first().locator(".cell").count()) === 4);
+  await until("a restore brings its beat", async () => /Your beat/.test(await pattern()) && /(^|\D)77\s*bpm/i.test(await tempoShown()) && (await page.locator(".seq-row").first().locator(".cell").count()) === 4);
   check("and its settings", !/\bon\b/.test((await beatChip("Follow").getAttribute("class")) ?? "") && !/\bon\b/.test((await beatChip("Mic FX").getAttribute("class")) ?? ""));
   await host("tempo", 120);
   await page.getByRole("radio", { name: /^sing$/i }).click();

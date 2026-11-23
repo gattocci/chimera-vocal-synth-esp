@@ -3,7 +3,8 @@ name: plugin
 on:
   push:
     branches: [main, "t3/**"]
-    # a release: CI builds, tests and publishes it (GitHub doesn't apply `paths` to tags)
+    # a release: CI builds and tests it on each system, then publishes it (GitHub doesn't apply
+    # `paths` to tags)
     tags: ["plugin-v*"]
     paths:
       - "crates/**"
@@ -27,9 +28,6 @@ jobs:
   macos:
     runs-on: macos-15
     timeout-minutes: 60
-    # to publish a release on a tag (a fork's pull request still gets a read-only token)
-    permissions:
-      contents: write
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
@@ -65,10 +63,20 @@ jobs:
           NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
           NOTARY_ISSUER_ID: ${{ secrets.NOTARY_ISSUER_ID }}
 
-      # before validating, so a strict validator can't keep a build from being tried in a real host
-      # the release's files, and public/install.sh run on them as a user would
-      - name: Release files and the installer
-        run: crates/chimera-plugin/macos/install-test.sh
+      # the release's archive (on a tag, only from a Developer ID build Apple has notarised), and
+      # public/install.sh run on it as a user would
+      - name: Release archive and the installer
+        run: |
+          crates/chimera-plugin/macos/release.sh ${RELEASE_TAG:+--tag "$RELEASE_TAG"}
+          crates/chimera-plugin/install-test.sh
+        env:
+          RELEASE_TAG: ${{ startsWith(github.ref, 'refs/tags/plugin-v') && github.ref_name || '' }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-macos
+          path: out/release/CHIMERA-macos.zip
+          if-no-files-found: error
 
       - name: Package
         run: |
@@ -86,11 +94,6 @@ jobs:
       - name: Validate
         run: crates/chimera-plugin/macos/validate.sh
 
-      # only a build that passed everything above
-      - name: Publish the release
-        if: startsWith(github.ref, 'refs/tags/plugin-v')
-        run: crates/chimera-plugin/macos/release.sh --publish "${GITHUB_REF_NAME}"
-
       # what the host test rendered and saw, to listen to and look at
       - uses: actions/upload-artifact@v4
         if: always()
@@ -100,3 +103,64 @@ jobs:
             target/host-test/*.wav
             target/host-test/*.jpg
           if-no-files-found: ignore
+
+
+  linux:
+    # the oldest supported Ubuntu, so the build needs no newer glibc than its (linux/ci.sh checks)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 40
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          # the editor's page embeds the engine built for the browser (bun run build)
+          targets: wasm32-unknown-unknown
+
+      - uses: oven-sh/setup-bun@v2
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Test, build, install, validate, and play it in REAPER
+        run: crates/chimera-plugin/linux/ci.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-linux
+          path: out/release/CHIMERA-linux.tar.gz
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: chimera-host-test-linux
+          path: |
+            target/host-test/*.wav
+            target/host-test/*.log
+          if-no-files-found: ignore
+
+  # on a tag, once every system's build has passed everything: one release with all their archives
+  release:
+    if: startsWith(github.ref, 'refs/tags/plugin-v')
+    needs: [macos, linux]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: oven-sh/setup-bun@v2
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          path: out/release
+          merge-multiple: true
+
+      - name: Publish the release
+        run: crates/chimera-plugin/publish.sh "${GITHUB_REF_NAME}"

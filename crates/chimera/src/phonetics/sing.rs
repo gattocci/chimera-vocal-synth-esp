@@ -37,7 +37,7 @@ fn cdur(ipa: &str, body: BodyMix, k: f64) -> f64 {
 /// nasal codas); otherwise the phoneme's spoken length times `k`. Either is squeezed when a note is
 /// too short for it.
 fn consonants(segs: &[Segment], body: BodyMix, k: f64) -> Vec<Segment> {
-    segs.iter().map(|c| Segment { ipa: c.ipa.clone(), dur: Some(c.dur.unwrap_or_else(|| cdur(&c.ipa, body, k))), aspirated: c.aspirated, vot: c.vot, palatalized: c.palatalized, breathy: c.breathy, ..Default::default() }).collect()
+    segs.iter().map(|c| Segment { ipa: c.ipa.clone(), dur: Some(c.dur.unwrap_or_else(|| cdur(&c.ipa, body, k))), aspirated: c.aspirated, vot: c.vot, palatalized: c.palatalized, breathy: c.breathy, lateral_release: c.lateral_release, ..Default::default() }).collect()
 }
 
 /// A sung vowel (or one half of a diphthong) at the note's pitch, with the sound marks of the
@@ -93,6 +93,9 @@ const CLOSING_ALVEOLAR: f64 = 0.6;
 const MIN_VOWEL: f64 = 0.05;
 /// a squeezed consonant keeps at least this long (s); a flap is 16 ms
 const MIN_CONSONANT: f64 = 0.012;
+/// A phrase's first movement begins this long before its first segment (s): the planner lays
+/// segments out 60 ms after the plan's start, and a stop's closing begins 1 ms before that.
+const PHRASE_LEAD: f64 = 0.062;
 
 /// Fit the consonants between a vowel and the next one into `span`, the time from the vowel's
 /// beat to the next vowel's (or to the end of a phrase's last note): when they leave the vowel
@@ -166,6 +169,28 @@ fn melisma(s: &Syllable) -> bool {
     s.melisma == Some(true)
 }
 
+/// What a syllable's front end says the voice lags its onset's last consonant (s,
+/// `Syllable::voice_lag`): the consonants are sung that much earlier, so the voice comes in where
+/// the vowel is due and not an aspiration after it. Unsaid, or with no onset: none.
+fn voice_lag(syl: &Syllable) -> f64 {
+    if melisma(syl) || syl.onset.is_empty() { 0.0 } else { js_max(0.0, syl.voice_lag.unwrap_or(0.0)) }
+}
+
+/// How long before its beat a syllable's vowel starts (s): its voice lag. Not before a medial
+/// glide: there the glide takes the lag at its own start (`medial_glide`), is voiced for as long
+/// as before and ends on the beat. With the lag taken out of the glide instead, 快 kuai's
+/// rounding was over before the voice began and the medial was lost (tests/medials.rs).
+fn vowel_lead(syl: &Syllable) -> f64 {
+    if onglide(&syl.nucleus.ipa).is_some() { 0.0 } else { voice_lag(syl) }
+}
+
+/// How long a rising nucleus's glide is sung in a song (s): its own time, and before it what the
+/// voice lags the onset (the breathed start of 快 kuai's glide). A live note has no beat to be
+/// ahead of and sings the glide's own time.
+fn medial_glide(syl: &Syllable) -> f64 {
+    MEDIAL_GLIDE + voice_lag(syl)
+}
+
 /// Plan a whole melody: one utterance per phrase, so each phrase gets its own breath.
 pub fn plan_song(notes: &[SungNote], o: &SongOptions) -> Plan {
     let beat = 60.0 / o.bpm;
@@ -178,6 +203,8 @@ pub fn plan_song(notes: &[SungNote], o: &SongOptions) -> Plan {
         t += n.beats * beat;
     }
     let mut end = t;
+    // where each note's vowel starts: on its beat, or ahead of it by what the voice lags the onset
+    let mut starts: Vec<f64> = notes.iter().zip(&times).map(|(n, t)| t - vowel_lead(&n.syl)).collect();
     let mut i = 0;
     while i < notes.len() {
         let mut j = i;
@@ -210,7 +237,7 @@ pub fn plan_song(notes: &[SungNote], o: &SongOptions) -> Plan {
                 let mut on = consonants_at(&notes[k].syl.onset, o.body, 0.8, onset_hz(k));
                 // a rising nucleus's medial glide ends the onset, so it is done by the beat
                 if let Some(a) = onglide(&notes[k].syl.nucleus.ipa) {
-                    on.push(nucleus_part(a, MEDIAL_GLIDE, onset_hz(k), &notes[k].syl.nucleus));
+                    on.push(nucleus_part(a, medial_glide(&notes[k].syl), onset_hz(k), &notes[k].syl.nucleus));
                 }
                 on
             })
@@ -229,13 +256,47 @@ pub fn plan_song(notes: &[SungNote], o: &SongOptions) -> Plan {
         // consonant, so the hold is out of its way
         let fade = if j + 1 < notes.len() {
             let next = &notes[j + 1].syl;
-            let onset = total(&consonants(&next.onset, o.body, 0.8)) + if onglide(&next.nucleus.ipa).is_some() { MEDIAL_GLIDE } else { 0.0 };
-            js_min(0.15, js_max(0.0, times[j + 1] - onset - 0.05 - last_end))
+            let onset = total(&consonants(&next.onset, o.body, 0.8)) + if onglide(&next.nucleus.ipa).is_some() { medial_glide(next) } else { 0.0 };
+            js_min(0.15, js_max(0.0, starts[j + 1] - onset - 0.05 - last_end))
         } else {
             0.15
         };
+        // a syllable that says so (`Syllable::onset_share`) shortens what comes before its vowel
+        // to a share of the time since the vowel before: the coda there, its own consonants and
+        // glide, and the voice's lag with its aspiration
+        for k in i..j {
+            let Some(share) = notes[k + 1].syl.onset_share.filter(|s| *s > 0.0) else { continue };
+            let lead = times[k + 1] - starts[k + 1];
+            let cons = total(&codas[k - i]) + total(&onsets[k + 1 - i]) + lead;
+            let room = share * (times[k + 1] - times[k]);
+            if cons > room && cons > 0.0 {
+                let f = room / cons;
+                for c in codas[k - i].iter_mut().chain(onsets[k + 1 - i].iter_mut()) {
+                    c.dur = Some(js_max(MIN_CONSONANT, c.dur.unwrap_or(0.0) * f));
+                    c.vot = c.vot.map(|v| v * f);
+                }
+                starts[k + 1] = times[k + 1] - lead * f;
+            }
+        }
+        // the call's first phrase has only the time before its first beat, and the plan's time 0
+        // is where a render starts. A syllable that leads the beat (`Syllable::voice_lag`)
+        // shortens its consonants to fit, as it does on a fast note: sung 90 ms earlier, 窗
+        // chuang's began 13 ms before time 0 from a beat at 0.3 s, and the start was cut
+        if i == 0 && voice_lag(&notes[0].syl) > 0.0 {
+            let lead = times[0] - starts[0];
+            let cons = total(&onsets[0]) + lead;
+            let room = times[0] - PHRASE_LEAD;
+            if cons > room && room > 0.0 {
+                let f = room / cons;
+                for c in onsets[0].iter_mut() {
+                    c.dur = Some(js_max(MIN_CONSONANT, c.dur.unwrap_or(0.0) * f));
+                    c.vot = c.vot.map(|v| v * f);
+                }
+                starts[0] = times[0] - lead * f;
+            }
+        }
         for k in i..=j {
-            let (span, next) = if k < j { (times[k + 1] - times[k], &mut onsets[k + 1 - i][..]) } else { (last_end - times[k], &mut [][..]) };
+            let (span, next) = if k < j { (starts[k + 1] - starts[k], &mut onsets[k + 1 - i][..]) } else { (last_end - starts[k], &mut [][..]) };
             fit([&mut codas[k - i][..], next], span);
         }
         let first_onset = total(&onsets[0]);
@@ -246,9 +307,9 @@ pub fn plan_song(notes: &[SungNote], o: &SongOptions) -> Plan {
             let coda = std::mem::take(&mut codas[k - i]);
             let onset = std::mem::take(&mut onsets[k - i]);
             // vowel from this note's beat to the next note's onset (less this note's coda)
-            let note_end = if k < j { times[k + 1] - total(&onsets[k + 1 - i]) } else { last_end };
+            let note_end = if k < j { starts[k + 1] - total(&onsets[k + 1 - i]) } else { last_end };
             // only consonants squeezed to their floor can leave less than MIN_VOWEL
-            let vdur = js_max(0.02, note_end - times[k] - total(&coda));
+            let vdur = js_max(0.02, note_end - starts[k] - total(&coda));
             segs.extend(onset);
             // the nucleus in time: the vowel that holds from the beat (a rising nucleus's glide
             // came with the onset), and a falling off-glide over the held part's last share (not
@@ -275,22 +336,22 @@ pub fn plan_song(notes: &[SungNote], o: &SongOptions) -> Plan {
                 // the syllable whose coda this is decides (a melisma's coda is its parent's)
                 let lead = last_of_chain(notes, k).nasal_lead.unwrap_or(0.0);
                 if closing.is_some() {
-                    closing_spans.push((times[k], times[k] + vdur, lead, coda_approach(&coda[0].ipa, held_vowel(nuc), o.body)));
+                    closing_spans.push((starts[k], starts[k] + vdur, lead, coda_approach(&coda[0].ipa, held_vowel(nuc), o.body)));
                     if k == j && coda.len() == 1 {
-                        final_coda = closure(&coda[0].ipa, o.body).map(|t| (times[k] + vdur + total(&coda), t));
+                        final_coda = closure(&coda[0].ipa, o.body).map(|t| (starts[k] + vdur + total(&coda), t));
                     }
                 }
             }
             segs.extend(coda);
-            vowel_spans.push((times[k], times[k] + vdur));
+            vowel_spans.push((starts[k], starts[k] + vdur));
             // bends shape their syllable's first note (a melisma continues at the written pitches)
             if !n.syl.pitch.is_empty() && !melisma(&n.syl) {
-                bend_spans.push((k, times[k], times[k] + vdur));
+                bend_spans.push((k, starts[k], starts[k] + vdur));
             }
         }
         if !segs.is_empty() {
             // the planner lays segments out from t0 + 0.06: start so the first vowel lands on its beat
-            let plan = plan_utterance(&segs, &PlanOptions { body: o.body, t0: times[i] - first_onset - 0.06, f0: Some(hz_of(i)), intonation: Some(Intonation::Flat), sung: Some(true), ..Default::default() });
+            let plan = plan_utterance(&segs, &PlanOptions { body: o.body, t0: starts[i] - first_onset - 0.06, f0: Some(hz_of(i)), intonation: Some(Intonation::Flat), sung: Some(true), ..Default::default() });
             gestures.extend_from_slice(&plan.gestures);
             segments.extend(plan.segments);
             for &(k, a, b) in &bend_spans {
@@ -399,6 +460,7 @@ pub struct LiveConsonant {
     pub vot: Option<f64>,
     pub palatalized: Option<bool>,
     pub breathy: Option<bool>,
+    pub lateral_release: bool,
 }
 
 /// Consonants held inline.
@@ -412,7 +474,7 @@ impl Cluster {
     fn from_segments(segs: &[Segment]) -> Cluster {
         let mut c = Cluster::default();
         for (slot, s) in c.cs.iter_mut().zip(segs) {
-            *slot = LiveConsonant { ipa: Label::new(&s.ipa), dur: s.dur, aspirated: s.aspirated, vot: s.vot, palatalized: s.palatalized, breathy: s.breathy };
+            *slot = LiveConsonant { ipa: Label::new(&s.ipa), dur: s.dur, aspirated: s.aspirated, vot: s.vot, palatalized: s.palatalized, breathy: s.breathy, lateral_release: s.lateral_release };
             c.n += 1;
         }
         c
@@ -480,7 +542,7 @@ type LiveSegments<'a> = SmallVec<[TimedSegment<'a>; super::planner::INLINE_SEGME
 fn push_consonants<'a>(out: &mut LiveSegments<'a>, c: &'a Cluster, body: BodyMix, k: f64) {
     for c in c.iter() {
         let ipa = c.ipa.as_str();
-        out.push(TimedSegment { ipa, dur: c.dur.unwrap_or_else(|| cdur(ipa, body, k)), aspirated: c.aspirated, vot: c.vot, palatalized: c.palatalized, breathy: c.breathy, ..Default::default() });
+        out.push(TimedSegment { ipa, dur: c.dur.unwrap_or_else(|| cdur(ipa, body, k)), aspirated: c.aspirated, vot: c.vot, palatalized: c.palatalized, breathy: c.breathy, lateral_release: c.lateral_release, ..Default::default() });
     }
 }
 

@@ -196,6 +196,11 @@ impl SpanishG2P {
             last.word_end = Some(true);
         }
         apply_allophones(&self.dialect, &mut segs);
+        for i in 1..segs.len() {
+            if matches!(segs[i - 1].ipa.as_str(), "l" | "ɫ") && matches!(segs[i].ipa.as_str(), "t" | "d") {
+                segs[i].lateral_release = true;
+            }
+        }
         segs
     }
 }

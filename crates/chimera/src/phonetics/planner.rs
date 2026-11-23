@@ -284,6 +284,7 @@ pub struct TimedSegment<'a> {
     pub nasalized: Option<bool>,
     pub palatalized: Option<bool>,
     pub breathy: Option<bool>,
+    pub lateral_release: bool,
     pub glide: Option<f64>,
 }
 
@@ -309,6 +310,7 @@ struct Seg<'a> {
     nasalized: Option<bool>,
     palatalized: Option<bool>,
     breathy: Option<bool>,
+    lateral_release: bool,
     /// a glide off the vowel before it, reached over this long (s): see `Segment::glide`
     glide: Option<f64>,
 }
@@ -377,6 +379,7 @@ pub fn plan_utterance(input: &[Segment], o: &PlanOptions) -> Plan {
         nasalized: s.nasalized,
         palatalized: s.palatalized,
         breathy: s.breathy,
+        lateral_release: s.lateral_release,
         glide: s.glide,
     });
     let mut gestures = Vec::new();
@@ -406,10 +409,10 @@ pub fn plan_timed<'a>(input: impl Iterator<Item = TimedSegment<'a>>, o: &PlanOpt
             };
             for (i, p) in parts.iter().enumerate() {
                 let dur = base * shares.get(i).copied().unwrap_or(1.0);
-                segs.push(Seg { ipa: p, dur, stress: s.stress, f0: s.f0, def: None, vowel: None, glide_from: i > 0, aspirated: None, vot: None, nasalized: s.nasalized, palatalized: None, breathy: s.breathy, glide: None });
+                segs.push(Seg { ipa: p, dur, stress: s.stress, f0: s.f0, def: None, vowel: None, glide_from: i > 0, aspirated: None, vot: None, nasalized: s.nasalized, palatalized: None, breathy: s.breathy, lateral_release: false, glide: None });
             }
         } else {
-            segs.push(Seg { ipa: s.ipa, dur: s.dur, stress: s.stress, f0: s.f0, def: None, vowel: None, glide_from: false, aspirated: s.aspirated, vot: s.vot, nasalized: s.nasalized, palatalized: s.palatalized, breathy: s.breathy, glide: s.glide });
+            segs.push(Seg { ipa: s.ipa, dur: s.dur, stress: s.stress, f0: s.f0, def: None, vowel: None, glide_from: false, aspirated: s.aspirated, vot: s.vot, nasalized: s.nasalized, palatalized: s.palatalized, breathy: s.breathy, lateral_release: s.lateral_release, glide: s.glide });
         }
     }
     for s in segs.iter_mut() {
@@ -536,8 +539,8 @@ pub fn plan_timed<'a>(input: impl Iterator<Item = TimedSegment<'a>>, o: &PlanOpt
         // /l/ keeps its side channel open after its segment ends. An alveolar stop closes
         // the tongue tip, but without releasing that lateral gesture /lt/ and /ld/ stay audible
         // as a lateral and the stop can disappear (Speak reports: "alto" → "allo", "caldo" → "calo").
-        if def.manner == Manner::Stop && prev_seg.is_some_and(|p| matches!(p.ipa, "l" | "ɫ")) {
-            gestures.push(Gesture::new(t0 - 0.07, t1 - 0.02, 0.04, 0.018, 125.0, one(ArticKey::Lateral, 0.0)).label("lateral release before stop"));
+        if def.manner == Manner::Stop && s.lateral_release {
+            gestures.push(Gesture::new(t0 - 0.07, t1 - 0.02, 0.04, 0.018, 125.0, one(ArticKey::Lateral, 0.0)).label("lateral release"));
         }
         // nasality: the velum lowers in anticipation (into the preceding vowel, as in English). The
         // port opens about 37 ms before the span and seals about 29 ms after it, as its lag isn't

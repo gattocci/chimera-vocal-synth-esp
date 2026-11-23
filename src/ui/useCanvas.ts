@@ -46,9 +46,3 @@ export function useCanvasLoop(draw: (f: CanvasFrame) => void) {
   }, []);
   return ref;
 }
-
-/** Canvas font in the Hershey stack (heavier weights map to its medium cut; IPA falls back to Archivo). */
-export function font(size: number, weight = 450, width = 100): string {
-  void width;
-  return `${weight >= 550 ? 500 : 300} ${size}px "Hershey", "Archivo", system-ui, sans-serif`;
-}

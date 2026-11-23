@@ -60,7 +60,7 @@ because the host asks the size before there's a window.
 
 The editor is the page in the user's web browser. Opening the plugin's window in the DAW starts a
 small server on 127.0.0.1 and opens its address with `xdg-open`, and closing the window stops it; the
-page then says it has no answer. The DAW's own window for the plugin stays small and empty. That's
+page then says it has no answer. The DAW's own window for the plugin stays small. That's
 `src/browser.rs`, and `src/http.rs`, which `examples/ui_harness.rs` serves the page with too.
 
 A webview inside the DAW's window would be WebKitGTK, which needs GTK running on its thread. The host's
@@ -70,6 +70,12 @@ process could embed WebKitGTK in the DAW's window by its X11 window ID, showing 
 at the cost of a second executable to ship, WebKitGTK for users to install, and X11 only. A browser
 needs none of that, and works on Wayland.
 
+- **Bitwig** (6.1.7, at least) destroys the editor after 1 s if its parent gets no child window, so
+  the editor maps a blank X11 child there, through x11rb: an X error is then the plugin's to log,
+  where Xlib's default handler would exit the DAW. The host's window is X11 either way (XWayland on a
+  Wayland desktop; nih-plug offers no other on Linux). The child's connection is its own, to
+  `$DISPLAY` with `$XAUTHORITY`, as nih-plug's other editors open theirs: a host on another display
+  is assumed away, and with no X display there's no child and Bitwig closes the editor. [#158](https://github.com/jamesondh/chimera-vocal-synth/issues/158)
 - **Who can reach it:** the page's own files are public (they're the open-source site), but anything
   about the plugin needs the random token in the page's address, which the page keeps and sends as a
   header: a cookie would go to every service on 127.0.0.1, whatever its port. A request must also name
@@ -83,9 +89,14 @@ needs none of that, and works on Wayland.
   out, and after 3 s without an answer it says so and polls once a second until there is one. That also
   covers a host whose main thread is busy, on the other systems. The first request has no timeout, as
   nothing would try it again.
-- **Tested:** the token check by unit tests. In REAPER for Linux here, by hand: the plugin opened its
-  page, a click on Beatbox reached it, and closing the window stopped the server and the page said so.
-  The host test on CI renders on Linux, and doesn't drive the browser.
+- **Tested:** the token check by unit tests, and under Xvfb on CI, the X11 child: mapped, gone
+  with the editor, and a parent already gone an error rather than an exit. In REAPER for Linux here,
+  by hand: the plugin opened its page, a click on Beatbox reached it, and closing the window stopped
+  the server and the page said so.
+  In Bitwig 6.1.7 (demo, under Xvfb), CLAP and VST3: the server answered for 15 s with the child
+  and stopped at 1 s without it; closing and opening the window again worked. REAPER keeps an editor
+  with no child, so it never showed this. The host test on CI renders on Linux, and doesn't drive the
+  browser.
 
 ## Threads
 
@@ -434,24 +445,36 @@ one transaction and in one `Pending` edit, so neither a held note nor a restore 
 
 ## Releases
 
-A tag `plugin-v<version>` (the version in `Cargo.toml`; `release.sh` refuses another) makes CI build,
-sign, notarise and test as on any push, and only then publish a GitHub release with three files from
-`macos/release.sh`:
+A tag `plugin-v<version>` (the version in `Cargo.toml`; `release.ts` refuses another) makes CI build,
+sign, notarise and test on each system as on any push. Only when both jobs pass does the `release` job
+(`publish.sh`) make a GitHub release, from the archives the jobs uploaded:
 
-- `CHIMERA-macos.zip`: a `CHIMERA` folder with the three bundles and `How to install.txt`.
+- `CHIMERA-macos.zip` (`macos/release.sh`, which on a tag also requires the Developer ID signature
+  and Apple's ticket on every bundle): a `CHIMERA` folder with the three bundles and
+  `How to install.txt`.
+- `CHIMERA-linux.tar.gz` (`linux/build.sh --package`): a `CHIMERA` folder with the CLAP (one `.so`),
+  the VST3 bundle, the licences and `How to install.txt`.
 - `SHA256SUMS`.
-- `manifest.json`: the version, the zip's address and SHA-256, and each bundle's path in the zip and its
-  folder. It's what an installer reads, so another tool (a package manager, a DAW's library) can install
-  CHIMERA without knowing anything else about it. `schema` goes up when a field changes meaning.
+- `manifest.json` (`release.ts`): the version, and for each system its archive's address and SHA-256
+  and each bundle's path in it and its folder. It's what an installer reads, so another tool (a package
+  manager, a DAW's library) can install CHIMERA without knowing anything else about it. `schema` goes
+  up when a field changes meaning; a new system or field doesn't.
 
-`releases/latest/download/<file>` always names the newest release's, so the website's Download button
+`releases/latest/download/<file>` always names the newest release's, so the website's Download buttons
 and `public/install.sh` never change. The installer (`curl -fsSL https://chimera.audio/install.sh | sh`,
-served from `public/`) reads the latest manifest, checks the zip's SHA-256 and every bundle's
-signature before copying any, and installs into `~/Library/Audio/Plug-Ins`, so it needs no password.
+served from `public/`) reads the latest manifest (with JavaScript for Automation on macOS, Python or jq
+on Linux), checks the archive's SHA-256 and, on macOS, every bundle's signature before copying any,
+and installs into `~/Library/Audio/Plug-Ins` or `~/.clap` and `~/.vst3`, so it needs no password.
 `curl` doesn't quarantine what it downloads; the bundles are notarised for a browser's download.
-`macos/install-test.sh` runs it on CI against each build's own release files, served as `file://`.
+`install-test.sh` runs it on CI on both systems, against each build's own archive served as `file://`.
+
+The Linux build is made on Ubuntu 22.04, so it needs glibc 2.35 at most: built on a newer system, the
+VST3 SDK's C++ calls glibc 2.38's `__isoc23_sscanf`, which Ubuntu 22.04 and Debian 12 lack. `linux/ci.sh`
+fails a build that needs a newer glibc than the 2.35 the release promises. When GitHub retires its
+22.04 runners, the build moves to the oldest one left and the promise with it.
 
 To release: bump `version` in `Cargo.toml` if it has shipped, merge, then tag `main` and push the tag.
+If either system's job fails, nothing is released: fix it, delete the tag, and tag again.
 
 ## Updating
 

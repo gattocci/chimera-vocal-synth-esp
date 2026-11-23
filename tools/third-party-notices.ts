@@ -11,7 +11,9 @@ import { execSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 
-const TARGET = "aarch64-apple-darwin";
+/** The system building it: each system's build.sh builds natively, and their dependencies differ (x11rb
+ * on Linux only, windows-sys on Windows only). */
+const TARGET = /^host: (\S+)/m.exec(execSync("rustc -vV").toString())![1];
 
 interface Pkg {
   id: string;

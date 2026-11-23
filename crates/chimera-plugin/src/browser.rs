@@ -1,7 +1,7 @@
 //! The editor on Linux: the page in the user's web browser, served from 127.0.0.1 while the host's
 //! window for the plugin is open. A webview inside that window would need GTK running on its thread
 //! (docs/plugin.md, "Linux"); a browser needs nothing, and works on Wayland too. The host's window
-//! stays small and empty.
+//! stays small, with a plain X11 child window.
 
 use std::fs::File;
 use std::io::Read;
@@ -9,6 +9,10 @@ use std::process::Command;
 use std::sync::{Arc, Mutex};
 
 use nih_plug::prelude::*;
+use x11rb::connection::Connection;
+use x11rb::protocol::xproto::{ConnectionExt as _, CreateWindowAux, Window, WindowClass};
+use x11rb::rust_connection::RustConnection;
+use x11rb::{COPY_DEPTH_FROM_PARENT, COPY_FROM_PARENT};
 
 use crate::ChimeraParams;
 use crate::bridge::{Bridge, GripAction, GuiHost, ParamHost};
@@ -78,11 +82,33 @@ impl ParamHost for Gated {
     fn grip(&self, _action: GripAction) {}
 }
 
+/// A blank window in the host's: Bitwig (6.1.7, at least) destroys an editor after a second if its
+/// parent gets no child window. Its own connection, so dropping it (closing that) makes the server
+/// destroy the window. Each request is checked: an error is ours to log, where Xlib's default
+/// handler would exit the process, the DAW.
+struct ChildWindow {
+    _conn: RustConnection,
+    #[cfg_attr(not(test), allow(dead_code))]
+    window: Window,
+}
+
+impl ChildWindow {
+    fn new(parent: Window) -> Result<Self, Box<dyn std::error::Error>> {
+        let (conn, _) = RustConnection::connect(None)?;
+        let window = conn.generate_id()?;
+        let aux = CreateWindowAux::new().background_pixel(0);
+        conn.create_window(COPY_DEPTH_FROM_PARENT, window, parent, 0, 0, WINDOW.0 as u16, WINDOW.1 as u16, 0, WindowClass::INPUT_OUTPUT, COPY_FROM_PARENT, &aux)?.check()?;
+        conn.map_window(window)?.check()?;
+        Ok(Self { _conn: conn, window })
+    }
+}
+
 /// The open editor: closing the host's window stops the server, and the page then says so.
 struct Open {
     bridge: Arc<Bridge>,
     gate: Arc<Gate>,
     server: Arc<tiny_http::Server>,
+    _child: Option<ChildWindow>,
 }
 
 impl Drop for Open {
@@ -95,7 +121,7 @@ impl Drop for Open {
 }
 
 impl Editor for BrowserEditor {
-    fn spawn(&self, _parent: ParentWindowHandle, context: Arc<dyn GuiContext>) -> Box<dyn std::any::Any + Send> {
+    fn spawn(&self, parent: ParentWindowHandle, context: Arc<dyn GuiContext>) -> Box<dyn std::any::Any + Send> {
         let gate = Arc::new(Gate(Mutex::new(Some(GuiHost::new(self.params.clone(), context)))));
         let bridge = Arc::new(Bridge::new(self.params.clone(), self.shared.clone(), Box::new(Gated(gate.clone()))));
         let server = match tiny_http::Server::http("127.0.0.1:0") {
@@ -131,7 +157,11 @@ impl Editor for BrowserEditor {
             Ok(mut child) => drop(std::thread::spawn(move || child.wait())),
             Err(err) => nih_error!("CHIMERA: could not open a browser ({err}): open {url}"),
         }
-        Box::new(Open { bridge, gate, server })
+        let child = match parent {
+            ParentWindowHandle::X11Window(window) => ChildWindow::new(window).map_err(|err| nih_error!("CHIMERA: no window in the host's ({err}): it may close the editor")).ok(),
+            _ => None,
+        };
+        Box::new(Open { bridge, gate, server, _child: child })
     }
 
     fn size(&self) -> (u32, u32) {
@@ -150,10 +180,50 @@ impl Editor for BrowserEditor {
 
 #[cfg(test)]
 mod tests {
-    use super::allowed;
+    use super::{ChildWindow, allowed};
+    use x11rb::connection::Connection;
+    use x11rb::protocol::xproto::{ConnectionExt as _, CreateWindowAux, MapState, WindowClass};
+    use x11rb::rust_connection::RustConnection;
+    use x11rb::{COPY_DEPTH_FROM_PARENT, COPY_FROM_PARENT};
 
     const T: &str = "abc123";
     const HOST: Option<&str> = Some("127.0.0.1:4000");
+
+    #[test]
+    #[ignore = "needs an X display: linux/ci.sh runs it under xvfb-run"]
+    fn the_x11_editor_maps_and_removes_its_child() {
+        let (conn, screen) = RustConnection::connect(None).expect("an X display");
+        let root = conn.setup().roots[screen].root;
+        let window = || {
+            let w = conn.generate_id().unwrap();
+            conn.create_window(COPY_DEPTH_FROM_PARENT, w, root, 0, 0, 400, 100, 0, WindowClass::INPUT_OUTPUT, COPY_FROM_PARENT, &CreateWindowAux::new()).unwrap().check().unwrap();
+            w
+        };
+        let children = |w| conn.query_tree(w).unwrap().reply().unwrap().children;
+
+        // the host's window: the child is in it, mapped, and gone once the editor drops it
+        let parent = window();
+        let child = ChildWindow::new(parent).expect("a child window");
+        assert_eq!(children(parent), [child.window]);
+        let map = conn.get_window_attributes(child.window).unwrap().reply().unwrap().map_state;
+        assert_ne!(map, MapState::UNMAPPED);
+        drop(child);
+        // the server destroys it once it has read the other connection's end
+        let mut left = children(parent);
+        for _ in 0..100 {
+            if left.is_empty() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+            left = children(parent);
+        }
+        assert!(left.is_empty(), "{left:?}");
+
+        // a parent already gone is an error to log, not the end of the process (Xlib's would be)
+        let gone = window();
+        conn.destroy_window(gone).unwrap().check().unwrap();
+        assert!(ChildWindow::new(gone).is_err());
+    }
 
     #[test]
     fn the_token_lets_a_request_about_the_plugin_in() {

@@ -117,7 +117,7 @@ function SongControls() {
         {
           name: "Song",
           encoders: [
-            { label: "Vibrato", value: vibrato, min: 0, max: 80, onChange: (v) => setVibrato(Math.round(v)), format: (v) => ({ value: String(Math.round(v)), unit: "cents" }) },
+            { label: "Vibrato", value: vibrato, min: 0, max: 80, step: 1, onChange: (v) => setVibrato(Math.round(v)), format: (v) => ({ value: String(Math.round(v)), unit: "cents" }) },
             { label: "Rate", value: source.vibratoRate, min: 3.5, max: 7.5, onChange: (v) => setSource({ vibratoRate: v }), format: (v) => ({ value: v.toFixed(1), unit: "Hz" }) },
             { label: "Breathy", value: source.breathiness, min: 0, max: 1, onChange: (v) => setSource({ breathiness: v }), format: (v) => ({ value: String(Math.round(v * 100)), unit: "%" }) },
             // the singer's ring narrows the tube just above the folds, adding the bright band near 3 kHz
@@ -131,8 +131,8 @@ function SongControls() {
               {
                 name: "Tune",
                 encoders: [
-                  { label: "Tempo", value: tempo, min: 0.5, max: 1.5, onChange: (v: number) => setTempo(Math.round(v * 20) / 20), format: (v: number) => ({ value: String(Math.round(v * 100)), unit: "%" }) },
-                  { label: "Key", value: key, min: -12, max: 12, onChange: (v: number) => setKey(Math.round(v)), format: (v: number) => ({ value: (v > 0.5 ? "+" : "") + String(Math.round(v)), unit: "semitones" }) },
+                  { label: "Tempo", value: tempo, min: 0.5, max: 1.5, step: 0.05, onChange: (v: number) => setTempo(Math.round(v * 20) / 20), format: (v: number) => ({ value: String(Math.round(v * 100)), unit: "%" }) },
+                  { label: "Key", value: key, min: -12, max: 12, step: 1, onChange: (v: number) => setKey(Math.round(v)), format: (v: number) => ({ value: (v > 0.5 ? "+" : "") + String(Math.round(v)), unit: "semitones" }) },
                 ],
               },
             ]),

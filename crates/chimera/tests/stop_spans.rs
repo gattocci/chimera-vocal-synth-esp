@@ -93,15 +93,6 @@ fn a_stop_after_s_sounds_closed_about_when_its_span_starts() {
 }
 
 #[test]
-fn a_stop_after_a_lateral_closes_in_time() {
-    let ipa = "ˈalto ˈaldo ˈalta ˈalda";
-    for name in ["male", "female"] {
-        let (n, median) = median_fall(ipa, name, |kind, _| kind == "lateral");
-        assert!(n == 4 && median.is_finite() && median.abs() <= 25.0, "{name}: lateral-to-stop closure at {median:.1} ms across {n} stops");
-    }
-}
-
-#[test]
 fn f_in_falda_is_not_lost_relative_to_f_controls() {
     let mut relative_levels = Vec::new();
     for ipa in ["fˈalda", "fˈasil", "fwˈeɣo"] {

@@ -58,6 +58,9 @@ pub struct Segment {
     /// vowel said with them part-open (IPA combining diaeresis below); None or false: modal
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub breathy: Option<bool>,
+    /// Spanish /l/ may release laterally into a following stop; false for other front ends.
+    #[serde(skip)]
+    pub lateral_release: bool,
     /// a vowel that is a glide off the vowel before it: reached over this long (s) while that vowel
     /// lets go over the glide's own length, so the two are one movement, not two held targets;
     /// None: a vowel of its own
@@ -155,6 +158,19 @@ pub struct Syllable {
     /// consonant of its own
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub closing: Option<f64>,
+    /// how long after the onset's last consonant the voice starts (s): an aspiration, a burst, a
+    /// fricative's release. A song then starts the vowel that long before its beat, so the voice
+    /// is there on the beat (before a medial glide the glide takes it, at its own start). None:
+    /// the vowel's segment starts on the beat and the voice after it
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub voice_lag: Option<f64>,
+    /// in a song, the consonants before this syllable's vowel (its onset and medial glide, the
+    /// voice's lag, the coda before them) take at most this share of the time from the vowel
+    /// before to this one, and shorten in proportion when a fast note leaves them less: singers'
+    /// consonants shorten with the notes. None: they keep their lengths until the vowel before is
+    /// down to its floor
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub onset_share: Option<f64>,
 }
 
 /// Which end of its sung vowel a pitch bend sits at.

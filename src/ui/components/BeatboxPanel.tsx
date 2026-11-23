@@ -190,7 +190,7 @@ function Transport() {
             {
               name: "Tempo",
               encoders: [
-                { label: "Tempo", value: beat.following ? beat.hostBpm : beat.bpm, min: 60, max: 240, onChange: (v) => setTempo({ bpm: Math.round(v) }), format: (v) => ({ value: String(Math.round(v)), unit: "bpm" }) },
+                { label: "Tempo", value: beat.following ? beat.hostBpm : beat.bpm, min: 60, max: 240, step: 1, onChange: (v) => setTempo({ bpm: Math.round(v) }), format: (v) => ({ value: String(Math.round(v)), unit: "bpm" }) },
                 { label: "Swing", value: beat.swing, min: 0, max: 0.6, onChange: (v) => setTempo({ swing: v }), format: (v) => ({ value: String(Math.round(v * 100)), unit: "%" }) },
               ],
             },

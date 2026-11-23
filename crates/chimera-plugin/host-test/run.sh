@@ -25,8 +25,8 @@ source "$here/$system/host-ui.sh"
 # from its top (measured in the UI harness). The page is scaled below LAYOUT_MIN (page_zoom in
 # src/bridge.rs), and since it's drawn scaled, text included, these hold at any window size.
 # tools/plugin-e2e.ts checks them against the page, so a change to the top bar fails there first.
-PLAY_FROM_RIGHT=508
-BEATBOX_FROM_RIGHT=354
+PLAY_FROM_RIGHT=496
+BEATBOX_FROM_RIGHT=351
 TAB_Y=26
 LAYOUT_W=1120
 LAYOUT_H=800

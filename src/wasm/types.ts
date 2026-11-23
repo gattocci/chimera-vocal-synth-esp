@@ -225,6 +225,10 @@ export interface Syllable {
   nasalLead?: number;
   /** the rhyme's ending (an off-glide, a nasal coda) is one closing movement at the note's end, this long at most (s); unset: a held part */
   closing?: number;
+  /** how long after the onset's last consonant the voice starts (s); a song starts the vowel that long before its beat. Unset: the vowel's segment starts on the beat */
+  voiceLag?: number;
+  /** in a song the consonants before this syllable's vowel take at most this share of the time since the vowel before, shortening in proportion. Unset: they keep their lengths */
+  onsetShare?: number;
 }
 
 /** A bend of the pitch inside a sung note: `st` semitones, at its vowel's start or end, over `len` of the vowel (at most `max` s). */

@@ -319,6 +319,23 @@ fn spanish_stops_are_not_aspirated() {
 }
 
 #[test]
+fn lateral_release_before_stops_is_spanish_only() {
+    use chimera::phonetics::planner::{PlanOptions, plan_utterance};
+
+    let has_release = |segments: &[Segment]| {
+        plan_utterance(segments, &PlanOptions::default()).gestures.iter().any(|g| {
+            g.label.as_ref().is_some_and(|label| label.as_str() == "lateral release")
+        })
+    };
+    let spanish = g2p().word("alto", false);
+    assert!(spanish.iter().any(|s| s.ipa == "t" && s.lateral_release));
+    assert!(has_release(&spanish));
+
+    let english = vec![Segment::new("l"), Segment::new("t"), Segment::new("o")];
+    assert!(!has_release(&english));
+}
+
+#[test]
 fn sung_words_keep_their_allophones() {
     let g = g2p();
     // the singing front end applies the word's allophones before it splits syllables: [z], [ŋ]
