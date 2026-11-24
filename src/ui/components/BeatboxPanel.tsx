@@ -174,61 +174,64 @@ function BeatActions() {
 function Transport() {
   const beat = useStore((s) => s.beat);
   const setTempo = useStore((s) => s.setBeatTempo);
-  const setSteps = useStore((s) => s.setBeatSteps);
-  const [text, setText] = useState(() => formatBeat(beat.steps));
-  const editing = useRef(false);
-  useEffect(() => {
-    if (!editing.current) setText(formatBeat(beat.steps));
-  }, [beat.steps]);
   return (
-    <div className="transport">
-      <div className="transport-encoders">
-        <EncoderPages
-          label="Transport"
-          columns={2}
-          pages={[
-            {
-              name: "Tempo",
-              encoders: [
-                { label: "Tempo", value: beat.following ? beat.hostBpm : beat.bpm, min: 60, max: 240, step: 1, onChange: (v) => setTempo({ bpm: Math.round(v) }), format: (v) => ({ value: String(Math.round(v)), unit: "bpm" }) },
-                { label: "Swing", value: beat.swing, min: 0, max: 0.6, onChange: (v) => setTempo({ swing: v }), format: (v) => ({ value: String(Math.round(v * 100)), unit: "%" }) },
-              ],
-            },
-          ]}
-        />
-      </div>
-      <label className="sbn">
-        <span className="dim">Beat as text</span>
-        <input
-          value={text}
-          title={`B kick, t hat, Pf snare, K rimshot, ^K inward, ! click, m hum (m:43 sets its note), . rest. Up to ${MAX_BEAT_STEPS} steps.`}
-          placeholder="B . t . | Pf . t ."
-          spellCheck={false}
-          onFocus={() => (editing.current = true)}
-          onBlur={() => {
-            editing.current = false;
-            setText(formatBeat(beat.steps));
-          }}
-          onChange={(e) => {
-            setText(e.target.value);
-            const steps = parseBeat(e.target.value);
-            if (steps.length) setSteps(steps);
-          }}
-        />
-      </label>
-    </div>
+    <EncoderPages
+      label="Transport"
+      columns={2}
+      pages={[
+        {
+          name: "Tempo",
+          encoders: [
+            { label: "Tempo", value: beat.following ? beat.hostBpm : beat.bpm, min: 60, max: 240, step: 1, onChange: (v) => setTempo({ bpm: Math.round(v) }), format: (v) => ({ value: String(Math.round(v)), unit: "bpm" }) },
+            { label: "Swing", value: beat.swing, min: 0, max: 0.6, onChange: (v) => setTempo({ swing: v }), format: (v) => ({ value: String(Math.round(v * 100)), unit: "%" }) },
+          ],
+        },
+      ]}
+    />
   );
 }
 
-/** Beatbox mode's right column: the beat button, the step sequencer, the waterfall, the pads, tempo and the beat as text, the keys (hum bass). */
+/** The pattern typed out, in the sequencer's header: edit either one. */
+function BeatText() {
+  const steps = useStore((s) => s.beat.steps);
+  const setSteps = useStore((s) => s.setBeatSteps);
+  const [text, setText] = useState(() => formatBeat(steps));
+  const editing = useRef(false);
+  useEffect(() => {
+    if (!editing.current) setText(formatBeat(steps));
+  }, [steps]);
+  return (
+    <label className="sbn">
+      <span className="dim">Beat as text</span>
+      <input
+        value={text}
+        title={`B kick, t hat, Pf snare, K rimshot, ^K inward, ! click, m hum (m:43 sets its note), . rest. Up to ${MAX_BEAT_STEPS} steps.`}
+        placeholder="B . t . | Pf . t ."
+        spellCheck={false}
+        onFocus={() => (editing.current = true)}
+        onBlur={() => {
+          editing.current = false;
+          setText(formatBeat(steps));
+        }}
+        onChange={(e) => {
+          setText(e.target.value);
+          const parsed = parseBeat(e.target.value);
+          if (parsed.length) setSteps(parsed);
+        }}
+      />
+    </label>
+  );
+}
+
+/** Beatbox mode's right column: the beat button, the step sequencer (and the beat as text), the waterfall, the pads, tempo, the keys (hum bass). */
 export function BeatboxRight() {
   return (
     <div className="right right-beatbox">
       <BeatActions />
-      <Screen className="s-seq" title="Step sequencer">
+      <Screen className="s-seq" title="Step sequencer" tools={<BeatText />}>
         <Sequencer />
       </Screen>
-      <Screen className="s-wf" title="Spectrogram">
+      <Screen watch className="s-wf" title="Spectrogram">
         <Spectrogram />
       </Screen>
       <Screen className="s-pads" title="Pads">

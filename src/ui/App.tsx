@@ -182,13 +182,13 @@ function PlayRight() {
   return (
     <div className="right right-play">
       <PlayActions />
-      <Screen className="s-tube" title="Tube" sub="Glottis to lips">
+      <Screen watch className="s-tube" title="Tube" sub="Glottis to lips">
         <TubeView />
       </Screen>
-      <Screen className="s-folds" title="Vocal folds" sub="Slowed 100×">
+      <Screen watch className="s-folds" title="Vocal folds" sub="Slowed 100×">
         <Stroboscope />
       </Screen>
-      <Screen className="s-spec" title="Spectrum">
+      <Screen watch className="s-spec" title="Spectrum">
         <SpectrumView />
       </Screen>
       <Screen className="s-vowels" title="Vowels" sub="F1 / F2">

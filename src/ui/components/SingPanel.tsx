@@ -274,13 +274,13 @@ export function SingRight() {
     <div className="right right-sing">
       {/* the plugin sings what the host plays: no tunes to sing or record */}
       {!inPlugin && <SingActions />}
-      <Screen className="s-roll" title="Pitch">
+      <Screen watch className="s-roll" title="Pitch">
         <PianoRoll />
       </Screen>
       <Screen className="s-lyrics" title="Lyrics" tools={inPlugin ? undefined : <LyricsLang />}>
         <Lyrics />
       </Screen>
-      <Screen className="s-spec" title="Spectrum" sub={ring ? "Ring on" : ""}>
+      <Screen watch className="s-spec" title="Spectrum" sub={ring ? "Ring on" : ""}>
         <SpectrumView ring={ring} />
       </Screen>
       <Screen className="s-voice" title="Voice">

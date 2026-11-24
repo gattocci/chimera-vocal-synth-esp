@@ -36,7 +36,7 @@ A hook, `usePhosphor(draw)`, replaces `useCanvasLoop` for the vector screens: DP
 ## Layout
 
 - `App` becomes a top bar plus a grid: the tall left screen and a right column. Each mode defines its right column (as in the mockups).
-- Below about 1100 px wide, the screens stack in one column: the left screen first, then the rest in reading order. Phones get the same stack.
+- Below about 1100 px wide, the screens stack in one column: the left screen first, then the rest in reading order. On a phone (640 px and under), everything you touch comes before everything you only watch: the controls sit right under the head, and the screens marked `<Screen watch>` (the charts, the tube, the folds) go last.
 - A `Screen` component draws the frame, title and subtitle; `focus` brightens the frame of the screen the encoders are bound to. Its content area always has a positive size (a minimum height per screen), and canvases fill it absolutely, so nothing collapses when stacked.
 - Wide content (the consonant chart, the sequencer) scrolls horizontally inside its screen on narrow layouts.
 

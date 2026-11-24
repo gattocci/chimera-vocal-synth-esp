@@ -6,8 +6,9 @@ CHIMERA sings other languages in two halves, the usual split in speech synthesis
 lyrics ──► router ──► FRONT END ──► syllables ──► BACK END ──► sound
            (by script)  English: CMUdict         (IPA, with what     the planner, the airway,
                         Korean: Hangul rules      the language        the voice: the same for
-                        Mandarin: pinyin lexicon  decides: aspiration, every language
-                        Pinyin: typed with tones  consonant lengths)
+                        Japanese: kana rules      decides: aspiration, every language
+                        Mandarin: pinyin lexicon  consonant lengths)
+                        Pinyin: typed with tones
                         Russian: spelling rules
                         Spanish: spelling rules
                         explicit syllables
@@ -29,6 +30,7 @@ Korean and Mandarin need (`ɕ ʑ tɕ dʑ tʂ dʐ ɥ`, step 3), aspiration as the
 | Latin | English | CMUdict (letter-to-sound until it loads) | `phonetics/english.rs`, `syllables.rs` |
 | Hangul | Korean | nothing: a block's letters are its sounds | `phonetics/korean.rs` |
 | Cyrillic | Russian | nothing: spelling rules, stress marked with an acute ([russian.md](russian.md)) | `phonetics/russian.rs` |
+| Kana | Japanese | nothing: kana are their sounds; no kanji ([Japanese](#japanese), below) | `phonetics/japanese.rs` |
 | Han | Mandarin | `public/data/mandarin.txt.gz` (208 KB, fetched when lyrics have Han characters) | `phonetics/mandarin.rs` |
 | Latin with tones | Mandarin as pinyin | nothing (checked against Mandarin's 411 syllables) | `phonetics/mandarin.rs` (`Pinyin`) |
 | Latin, when chosen | Turkish | nothing: spelling rules, stress by rule ([turkish.md](turkish.md)) | `phonetics/turkish.rs` |
@@ -83,6 +85,78 @@ how long they aspirate (`vot`, voice onset time):
 Between voiced sounds a lax stop is voiced (아기 [agi]). Not modelled yet: the lower pitch that
 follows a lax stop (Seoul speakers rely on it as much as on aspiration; a start bend could carry
 it, untried) and the stiff voice of tense stops. A Korean speaker's ear is still wanted.
+
+## Japanese
+
+Hiragana, katakana (and half-width katakana) are read as they are written, with no dictionary:
+**kanji are not claimed.** A Han character goes to the Mandarin front end (a Chinese reading, or
+nothing when its lexicon isn't loaded) and the kana around it are sung, so type Japanese lyrics in
+kana, as most singing editors expect. Kana need no choice in the EN/TR/ES setting (`Lang` only says
+what Latin script is); which language a Han text is waits for more language choices ("Not yet").
+
+**One mora is one note**, the convention of Japanese singing, so a note is the unit the song counts
+in and a lyric sets as many notes as it has morae:
+
+| Written | Sung as | Notes |
+|---|---|---|
+| きゃ しゃ ふぁ てぃ (a kana and its small kana) | one mora: き+ゃ is [kʲʰja] (the consonant palatalised), し+ゃ [ɕa] (it carries its own palatal), ふ+ぁ [ɸa] | 1 |
+| ー 〜 (also おお ああ きい, おう) | the vowel before it, held on a **melisma note** that continues it at the new pitch: とうきょう is to-(o) kyo-(o) | 1 each |
+| ん | a **hum**: the note's nucleus is the nasal of the sound after it, held for the whole note, and the note before closes into it (below) | 1 |
+| っ | the vowel before goes on into its note, which ends in the **long consonant** after it (below) | 1 |
+| a hyphen: おも-う | the kana after it starts a note of its own, read as it is written (the う of 思う is a syllable, not a long o) | |
+
+A vowel kana that repeats the vowel before it, or う after an o, is read as a long vowel: right for
+学校 がっこう and とうきょう, wrong for the う that is a syllable of its own (思う); the hyphen is
+the way to say so. い after an e is sung as it is written (先生 せんせい is se-n-se-i): singers
+sing the い, and a listener called the long e wrong.
+
+When a melody has more or fewer notes than the lyric has morae, nothing special happens in the
+front end: the app fits a lyric to a tune's phrases (`src/song/fit.ts`), splitting the longest note
+when there are too few or holding a syllable's vowel across several when there are
+too many. To hold a mora where the tune does, type ー (or the router's `~`, spaced) after it.
+
+- **ん** is a hum on [m] before p b m, [n] before t d n ts z ɾ tɕ dʑ ɲ, and [ŋ] before k g, a
+  vowel, a glide, a fricative and at the end of a word (one of the three nasals the planner closes
+  a rhyme onto), the note's nucleus for the whole note: with っ's silent [ʔ] (below), one of the
+  two places this front end writes a consonant as a nucleus. The planner times and voices a nasal over the note's length like a
+  vowel, and the rest (the app's fitting, the live keys) only copy a nucleus. The note before
+  closes into it the way a Mandarin rhyme closes onto its coda (`closing`): a short coda of the same
+  nasal, the vowel nasalised over its last 60 %, so かん on two notes is [kãŋ] [ŋ], one movement.
+  A second ん goes on with the hum. A listener compared this with the vowel going on into ん's note
+  and closing onto the nasal at its end, next to an ACE Studio singer (whose ん is a hum from the
+  beat), and chose the hum on long notes and short ones; the other way, かん on two beats was
+  heard as "ka...n". At 0.6 s a mora the hum had been heard as two sounds too: tempo decides. The
+  recogniser reads both ways alike.
+- **っ** is a mora, so a note: the vowel before goes on into it (a melisma note), and the consonant
+  after it is held 250 ms longer than a single one, out of that note (the planner shortens it when
+  the note is shorter). As no note, with the consonant twice its length (150 ms of closure), it was
+  not heard as a geminate inside a sung note: a listener called it wrong and the recogniser read
+  がっこう as 過去. Before a vowel, a glide, a tap, ん or the end of a word (あっ!) a glottal stop
+  cuts the note before and is held, silent, through っ's own note as its nucleus; at the start of a word there is
+  no note to go on from and it is dropped.
+- **Consonants:** し [ɕ], ち [tɕ], つ [ts], ふ [ɸ], ひ [ç], じ ぢ [dʑ], ず づ [z], に [ɲ], the ら行 a
+  tap [ɾ]. The ざ行 is the affricate [dz] at the start of a word and after ん, [z] between vowels.
+  **わ is [w]**: it is written [ɰ] (the lips compressed, not rounded), but the inventory's [ɰ] is
+  the tongue alone, and a listener heard it as ら. **う is the unrounded [ɯ]**, a vowel the
+  inventory already has (Korean's ㅡ). A yōon's consonant is palatalised (きゃ [kʲja]), except
+  two: ひゃ is [hʲja], h at the palate with its glide, because as [ça] the fricative was 36 dB under
+  the vowel at the start of a phrase (an ACE Studio singer's is 11-17); and ぎゃ's g is not
+  palatalised and has a 30 ms glide, because palatalised, the closure let the voice through 15-20
+  dB under the vowel (が's is silent). Both read better to the recogniser (ぎゅうにゅう ひゃくえん as
+  牛乳 00円, before ぎゅ乳 0円), but a listener still hears the ぎ and the ひ missing, at the start
+  of a phrase: the engine's h and ç there are 10-20 dB under ACE's, and a phrase-initial voiced
+  stop murmurs through its closure. Neither is the front end's to fix. Tried and not the cause:
+  the oral tube's first section dropping the frication source (#124's fix moves these onsets by
+  under 1 dB), a narrower or wider [ç] (0.06-0.3 cm²: within 4 dB), and the sung breath at full drive 60 ms earlier (the
+  ひ comes up 20 dB, but a vowel is heard before it).
+
+A listener who knows Japanese (not a native speaker) heard five versions and the points above
+marked "a listener" are theirs; the last two were heard next to ACE Studio's Japanese singers on
+the same notes. Listen at a natural tempo: at 0.6 s a mora every sound is drawn
+out and nothing sounds right, at 0.3 s the recogniser reads whole lines. Known and not fixed here: a k (and a つ) at the start of a
+phrase has almost no burst, so きょう can lose its k; it is the engine's stop, the same in every
+language. Next to ACE's singers the listener rated the long vowels, っ, ん, こんにちは and the
+lines with し ち つ ふ and the tap close; the yōon above are not.
 
 ## Mandarin
 
@@ -234,7 +308,7 @@ Every front end writes the same thing, one sung syllable per sounding note:
   English's 50 ms). Each millisecond more or less than 50 moves the voice's return by a
   millisecond; the measured voice onset also depends on the place and the voice (the Korean table
   above: 45 asked gives 53–69 ms, 90 gives 96–110).
-- `nucleus`: one vowel, or a diphthong the planner knows. Falling ones (aɪ eɪ aʊ oʊ ɔɪ əʊ) hold
+- `nucleus`: one vowel, or a diphthong the planner knows (Japanese's ん is a nasal, held as a hum). Falling ones (aɪ eɪ aʊ oʊ ɔɪ əʊ) hold
   their first vowel and glide off at the note's end; rising ones (ia iɛ iɑ iʊ ua uo uɔ uɑ uə yɛ, with
   Mandarin's back u and ʊ: u̠a u̠ɔ u̠ɑ u̠ə iʊ̠, and er's əɝ aɝ) sing
   the first vowel as a quick glide of 50 ms that ends on the beat, after the initial consonant, so
@@ -354,9 +428,9 @@ three of four comparisons.
 ## Not yet
 
 - **More language choices.** Routing by script can't tell German from English, or Cantonese and
-  Japanese from Mandarin, so Latin text is English unless it is toned pinyin or Turkish is chosen,
-  and Han characters are Mandarin. Each new Latin-script language joins `Lang`, the one language
-  setting (#40).
+  Japanese from Mandarin, so Latin text is English unless it is toned pinyin or Turkish or Spanish
+  is chosen, and Han characters are Mandarin (which leaves a Japanese kanji nowhere to go but
+  Mandarin's reading). Each new Latin-script language joins `Lang`, the one language setting (#40).
 - **Bends on live notes:** a key pressed in Sing or a note from the plugin (`plan_note_on`) sings
   the note's pitch.
 - **Tones in speech:** Speak doesn't read Mandarin yet; the tones' contours and speech tuning come

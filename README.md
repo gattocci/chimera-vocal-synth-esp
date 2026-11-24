@@ -37,10 +37,11 @@ for tests and the `chimera` CLI.
 - **Sing**: type words and the **Sing** button sings them to a tune picked by its mood, each line
   fitted to a phrase of it (Tempo and Key on the Voice screen); **Record video** sings it again into a
   9:16 clip to share. The keys sing the same words a syllable at a time, legato or not, onto a
-  pitch roll; consonants land before the beat. Lyrics can be English, Turkish, Spanish, Korean
-  (Hangul: one block per note, with Korean sound rules), or Russian; each language is a front end
+  pitch roll; consonants land before the beat. Lyrics can be English, Turkish or Spanish (chosen
+  with EN/TR/ES: Latin script can't tell them apart), Korean (Hangul: one block per note, with
+  Korean sound rules), Japanese (kana, one mora per note) or Russian; each language is a front end
   ([docs/language-front-ends.md](docs/language-front-ends.md)). Spanish supports neutral Latin
-  American, Rioplatense, and Castilian presets.
+  American, Rioplatense and Castilian presets.
 - **Beatbox**: pads and a step sequencer, every drum an articulatory gesture.
 - **Bestiary**: songbird (two-voice syrinx), seal, alligator and elephant.
 - **Duet** (`?show=<id>`): two 3D heads replay a pre-rendered song.

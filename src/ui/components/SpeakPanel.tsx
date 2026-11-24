@@ -271,7 +271,7 @@ export function SpeakRight() {
           {inPlugin && <Lines />}
         </div>
       </Screen>
-      <Screen className="s-score" title="Gestural score">
+      <Screen watch className="s-score" title="Gestural score">
         <ScoreView />
       </Screen>
       <Screen
@@ -290,10 +290,10 @@ export function SpeakRight() {
       >
         <ConsonantChart onPad={(c) => void pad(c)} />
       </Screen>
-      <Screen className="s-tube" title="Tube" sub="Glottis to lips">
+      <Screen watch className="s-tube" title="Tube" sub="Glottis to lips">
         <TubeView />
       </Screen>
-      <Screen className="s-folds" title="Vocal folds" sub="Slowed 100×">
+      <Screen watch className="s-folds" title="Vocal folds" sub="Slowed 100×">
         <Stroboscope />
       </Screen>
     </div>

@@ -6,11 +6,15 @@
 //! English words come from the pronouncing dictionary (unreduced: sung function words keep full
 //! vowels), are split into syllables by the maximal-onset principle with English onset clusters,
 //! and the spelling is split to match for display ("twin-kle"). Hangul words go to
-//! [`super::korean`], one syllable per block, Cyrillic words to [`super::russian`]. Typed hyphens force syllable breaks; a lone "-" (or
-//! "~") holds the previous vowel onto the next note (melisma), as in vocaloid editors.
+//! [`super::korean`], one syllable per block, Cyrillic words to [`super::russian`], kana to
+//! [`super::japanese`], one mora per note. Latin script is English unless the player chooses
+//! Turkish or Spanish ([`Lang`], [`super::turkish`], [`super::spanish`]): the script can't tell
+//! them apart. Typed hyphens force syllable breaks; a lone "-" (or "~") holds the previous vowel
+//! onto the next note (melisma), as in vocaloid editors.
 
 use crate::anatomy::human::BodyMix;
 use super::english::js_is_space;
+use super::japanese::Japanese;
 use super::korean::Korean;
 use super::mandarin::{Mandarin, MandarinLexicon, Pinyin};
 use super::russian::Russian;
@@ -261,8 +265,9 @@ impl<F: Fn(&str, bool) -> Vec<Segment>> WordSource for F {
 }
 
 fn is_lyric_punct(c: char) -> bool {
-    // ASCII, and the full-width forms Chinese and Japanese lyrics use
-    matches!(c, '.' | ',' | ';' | ':' | '!' | '?' | '\n' | '，' | '。' | '！' | '？' | '；' | '：' | '、')
+    // ASCII, the full-width forms Chinese and Japanese lyrics use, and the half-width ､ ｡ typed
+    // with half-width katakana
+    matches!(c, '.' | ',' | ';' | ':' | '!' | '?' | '\n' | '，' | '。' | '！' | '？' | '；' | '：' | '、' | '\u{FF64}' | '\u{FF61}')
 }
 /// A language front end: claims the words written in its script and turns each into sung syllables
 /// (IPA onset, nucleus and coda; each syllable's text is its part of the word's spelling).
@@ -445,10 +450,10 @@ pub fn lyrics_to_syllables(text: &str, g2p: &impl WordSource) -> Vec<Syllable> {
 }
 
 /// Lyrics → sung syllables through every built-in front end: pinyin (only words with tones; before
-/// the Latin-script language, which shares its alphabet), English (`g2p`) or Spanish, Korean,
-/// Russian, and Mandarin with its lexicon (empty: Han characters are skipped). The one list the
-/// app, the wasm engine and the CLI all read lyrics through, so a new front end can't be missing
-/// from one of them.
+/// the Latin-script language, which shares its alphabet), English (`g2p`), Turkish or Spanish,
+/// Korean, Russian, Japanese kana, and Mandarin with its lexicon (empty: Han characters are
+/// skipped). The one list the app, the wasm engine and the CLI all read lyrics through, so a new
+/// front end can't be missing from one of them.
 pub fn lyrics_to_syllables_with(text: &str, g2p: &impl WordSource, zh: &MandarinLexicon) -> Vec<Syllable> {
     lyrics_in(text, g2p, zh, Lang::En)
 }
@@ -463,11 +468,15 @@ pub enum Lang {
     Es,
 }
 
-/// Route Latin-script lyrics through the selected front end; other scripts route as before.
+/// Lyrics → sung syllables through every built-in front end, with Latin script read as `lang`:
+/// pinyin (only words with tones; before the Latin-script language, which shares its alphabet),
+/// English (`g2p`), Turkish or Spanish, Korean, Russian, Japanese kana, and Mandarin with its
+/// lexicon (empty: Han characters are skipped). The one list the app, the wasm engine and the CLI
+/// all read lyrics through, so a new front end can't be missing from one of them.
 pub fn lyrics_in(text: &str, g2p: &impl WordSource, zh: &MandarinLexicon, lang: Lang) -> Vec<Syllable> {
     match lang {
-        Lang::En => read_lyrics(text, &[&Pinyin, &English(g2p), &Korean, &Russian, &Mandarin(zh)]),
-        Lang::Tr => read_lyrics(text, &[&Pinyin, &Turkish, &Korean, &Russian, &Mandarin(zh)]),
-        Lang::Es => read_lyrics(text, &[&Pinyin, &Spanish(g2p), &Korean, &Russian, &Mandarin(zh)]),
+        Lang::En => read_lyrics(text, &[&Pinyin, &English(g2p), &Korean, &Russian, &Japanese, &Mandarin(zh)]),
+        Lang::Tr => read_lyrics(text, &[&Pinyin, &Turkish, &Korean, &Russian, &Japanese, &Mandarin(zh)]),
+        Lang::Es => read_lyrics(text, &[&Pinyin, &Spanish(g2p), &Korean, &Russian, &Japanese, &Mandarin(zh)]),
     }
 }

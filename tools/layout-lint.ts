@@ -13,8 +13,11 @@
  *  - screens     two screens, or a screen and the top bar, overlapping
  *  - canvas-edge canvas text running off its canvas
  *  - h-scroll    the page scrolls sideways
+ *  - page-scroll the page scrolls down in a window it must fit: the plugin's windows, and a desktop
+ *                window (`fit`) as tall as Play needs, which Sing and Beatbox once overflowed
  *  - small-text  text under 11 px, DOM or canvas (the label floor: docs/ui-redesign.md → Type)
  *  - shift       an encoder's readout moving as the encoder turns (each is turned to its ends)
+ *  - order       on a phone, a screen you touch below one you only watch (`<Screen watch>`)
  *  - stale       (warning) a canvas still showing a frame drawn for another size, so its text went unchecked
  *
  * Opt-outs, for things meant to sit on top of other things:
@@ -40,13 +43,17 @@ const arg = (name: string) => {
   return i > 0 ? process.argv[i + 1] : undefined;
 };
 
-export const VIEWPORTS: { w: number; h: number }[] = [
+export const VIEWPORTS: { w: number; h: number; fit?: boolean }[] = [
   { w: 375, h: 812 }, // phone
   { w: 768, h: 1024 }, // tablet, portrait
   { w: 1024, h: 768 }, // tablet, landscape; small laptop
   { w: 1280, h: 720 },
   { w: 1366, h: 768 },
   { w: 1440, h: 900 },
+  // every tab fits a window Play fits (805 px at this width): Beatbox needed 893 and Sing 811.
+  // Speak's short Tube and Vocal folds drew 11 px labels at 10.9 here (canvases scaled by dpr, not
+  // by their rounded backing store).
+  { w: 1728, h: 808, fit: true },
   { w: 1920, h: 1080 },
   { w: 2560, h: 1440 },
 ];
@@ -219,6 +226,17 @@ function inspect(): Problem[] {
     }
   }
 
+  // on a phone, what you touch comes before what you only watch: no screen under a `watch` one
+  // (the phone layout: styles.css, max-width 640px)
+  if (window.innerWidth <= 640) {
+    const column = [...document.querySelectorAll(".wall > .right > .screen")].filter(visible).sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top);
+    let watched: Element | undefined;
+    for (const s of column) {
+      if (s.classList.contains("watch")) watched ??= s;
+      else if (watched) problems.push({ kind: "order", detail: `${s.getAttribute("aria-label")} sits below ${watched.getAttribute("aria-label")}, which only shows: on a phone the screens you touch come first` });
+    }
+  }
+
   const sw = document.documentElement.scrollWidth;
   if (sw > window.innerWidth + 1) problems.push({ kind: "h-scroll", detail: `the page is ${sw}px wide in a ${window.innerWidth}px window` });
   return problems;
@@ -319,7 +337,7 @@ async function main() {
   const gl = process.platform === "darwin" ? ["--use-angle=metal", "--ignore-gpu-blocklist"] : ["--use-angle=swiftshader", "--enable-unsafe-swiftshader"];
   const browser = await chromium.launch({ headless: true, args: ["--autoplay-policy=no-user-gesture-required", ...gl] });
   let errors = 0, warnings = 0, views = 0;
-  for (const { w, h } of viewports) {
+  for (const { w, h, fit } of viewports as { w: number; h: number; fit?: boolean }[]) {
     const page = await browser.newPage({ viewport: { width: w, height: h }, deviceScaleFactor: 1 });
     await page.addInitScript(hookCanvasText);
     page.on("pageerror", (e) => {
@@ -334,7 +352,7 @@ async function main() {
       views++;
       const problems = (await page.evaluate(inspect)) as Problem[];
       // a plugin's window doesn't scroll: what's below the fold might as well not be there
-      if (plugin) {
+      if (plugin || fit) {
         const over = await page.evaluate(() => document.documentElement.scrollHeight - innerHeight);
         if (over > 0) problems.push({ kind: "page-scroll", detail: `${over}px taller than the window` });
       }
