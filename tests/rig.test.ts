@@ -8,6 +8,29 @@ import * as THREE from "three";
 import { initEngine } from "./harness.ts";
 import type { Rig as RigT } from "../src/rig/rig.ts";
 import type { Pose } from "../src/rig/pose.ts";
+import { arm, leg, neutral, pose, PRESETS, RANGE, serializePose } from "../src/rig/pose.ts";
+import { aimNeck } from "../src/rig/aimNeck.ts";
+
+test("copy pose round-trips presets and arbitrary joint angles", () => {
+  let seed = 13;
+  const randomPart = (ranges: Record<string, readonly [number, number]>) =>
+    Object.fromEntries(Object.entries(ranges).map(([joint, [min, max]]) => {
+      seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+      return [joint, min + (max - min) * (seed / 2 ** 32)];
+    }));
+  const asymmetric = pose({
+    body: randomPart(RANGE.body), spine: randomPart(RANGE.spine), neck: randomPart(RANGE.neck),
+    arms: { R: arm(randomPart(RANGE.arm)), L: arm(randomPart(RANGE.arm)) },
+    legs: { R: leg(randomPart(RANGE.leg)) },
+  });
+  const symmetric = pose({ bothArms: randomPart(RANGE.arm), bothLegs: randomPart(RANGE.leg) });
+  for (const p of [...Object.values(PRESETS), asymmetric, symmetric]) {
+    expect(new Function("pose", `return ${serializePose(p)}`)(pose)).toEqual(p);
+  }
+  expect(serializePose(neutral())).toBe("pose({})");
+  expect(serializePose(PRESETS["T pose"])).toBe("pose({bothArms: {raise: 90}})");
+  expect(serializePose(symmetric)).toContain("bothLegs");
+});
 
 type Mods = {
   Rig: typeof import("../src/rig/rig.ts").Rig;
@@ -17,19 +40,46 @@ type Mods = {
   VoiceModel: typeof import("../src/ui/analysis.ts").VoiceModel;
   BODIES: typeof import("../src/ui/body.ts").PRESETS;
   REST_ARTIC: typeof import("../src/ui/render/anatomy3d.ts").REST_ARTIC;
+  nerves: typeof import("../src/rig/nerves.ts");
 };
 let M: Mods;
 beforeAll(async () => {
   await initEngine();
   // the head reads the engine's tables as it loads: after the engine
-  const [rig, pose, head, analysis, body, a3d, motion] = await Promise.all([import("../src/rig/rig.ts"), import("../src/rig/pose.ts"), import("../src/rig/head.ts"), import("../src/ui/analysis.ts"), import("../src/ui/body.ts"), import("../src/ui/render/anatomy3d.ts"), import("../src/rig/motion.ts")]);
-  M = { Rig: rig.Rig, motion, pose, head, VoiceModel: analysis.VoiceModel, BODIES: body.PRESETS, REST_ARTIC: a3d.REST_ARTIC };
+  const [rig, pose, head, analysis, body, a3d, motion, nerves] = await Promise.all([import("../src/rig/rig.ts"), import("../src/rig/pose.ts"), import("../src/rig/head.ts"), import("../src/ui/analysis.ts"), import("../src/ui/body.ts"), import("../src/ui/render/anatomy3d.ts"), import("../src/rig/motion.ts"), import("../src/rig/nerves.ts")]);
+  M = { Rig: rig.Rig, motion, pose, head, VoiceModel: analysis.VoiceModel, BODIES: body.PRESETS, REST_ARTIC: a3d.REST_ARTIC, nerves };
 });
 
 function loadRig(): RigT {
   const b = readFileSync(new URL("../src/rig/body.rig.bin", import.meta.url));
   return new M.Rig(b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength) as ArrayBuffer);
 }
+
+test("the neck aims at world-space cameras from a moved, turned and scaled figure", () => {
+  const rig = loadRig();
+  const p = pose({ body: { turn: 47, tip: -19, x: 30, y: -21, z: -40 }, spine: { bend: 23, twist: -32 }, neck: { twist: 15, bend: -13 } });
+  const parent = new THREE.Matrix4().compose(
+    new THREE.Vector3(30, 10, -50),
+    new THREE.Quaternion().setFromEuler(new THREE.Euler(0.3, -0.4, 0.2)),
+    new THREE.Vector3(0.65, 0.65, 0.65),
+  );
+  rig.pose(p);
+  const neck = rig.bone("neck"), head = rig.bone("head");
+  const trunk = rig.W[rig.bones[neck].parent].clone();
+  const target = (x: number, y: number, z: number) =>
+    new THREE.Vector3(x, y, z).applyQuaternion(trunk).add(rig.P[neck]).applyMatrix4(parent);
+  for (const camera of [target(48, 10, 33), target(55, -25, -65), target(80, 54, 35), target(20, 0, 90)]) {
+    const aimed = aimNeck(rig, parent, camera);
+    rig.pose({ ...p, neck: aimed });
+    const forward = new THREE.Vector3(1, 0, 0).applyQuaternion(rig.S[head]).transformDirection(parent);
+    const ray = camera.sub(rig.P[head].clone().applyMatrix4(parent));
+    expect(THREE.MathUtils.radToDeg(forward.angleTo(ray))).toBeLessThan(3);
+  }
+  expect(aimNeck(rig, parent, target(-80, 5, 50)).twist).toBe(RANGE.neck.twist[0]);
+  expect(aimNeck(rig, parent, target(-80, 5, -50)).twist).toBe(RANGE.neck.twist[1]);
+  expect(aimNeck(rig, parent, target(2, 200, 0)).flex).toBe(RANGE.neck.flex[0]);
+  expect(aimNeck(rig, parent, target(2, -200, 0)).flex).toBe(RANGE.neck.flex[1]);
+});
 
 /** the mesh's edges that only one quad has, as vertex pairs */
 function openEdges(rig: RigT): [number, number][] {
@@ -225,6 +275,26 @@ describe("the head on the body", () => {
     expect(maxMove(base, out, crown)).toBeLessThan(1e-4);
     expect(maxMove(base, out, rig.rim)).toBe(0);
     expect(maxMove(base, out, lipPairs(rig).map(([, l]) => l))).toBeGreaterThan(0.5);
+  });
+
+  test("the words at a worn head's mouth are sized by the head's scale on screen whichever way the body faces (the camera's right was added in the head's frame: faced along the stage's z, it measured next to nothing)", () => {
+    const rig = loadRig(), model = new M.VoiceModel(M.BODIES.male, 48000), head = M.head.wearHead(rig, model);
+    head.resize(900, 900);
+    const camera = new THREE.PerspectiveCamera(30, 1, 5, 5000), frame = model.frame(M.REST_ARTIC);
+    /** px per cm at the lips, 150 cm in front of the face with the body turned this far */
+    const pxPerCm = (turn: number) => {
+      rig.pose(M.pose.pose({ body: { turn } }));
+      head.update(camera, M.REST_ARTIC, null, 0);
+      const g = head.head.headGroup.matrixWorld, mouth = new THREE.Vector3(8, 8, 0).applyMatrix4(g);
+      camera.position.copy(mouth).add(new THREE.Vector3(1, 0, 0).transformDirection(g).multiplyScalar(150));
+      camera.lookAt(mouth);
+      camera.updateMatrixWorld(true);
+      head.update(camera, M.REST_ARTIC, null, 0);
+      return head.head.faceView(model, frame, M.REST_ARTIC, camera).pxPerCm;
+    };
+    const ahead = pxPerCm(0);
+    expect(ahead).toBeGreaterThan(2);
+    for (const turn of [90, -90, 45]) expect(pxPerCm(turn) / ahead).toBeCloseTo(1, 2);
   });
 });
 
@@ -466,5 +536,140 @@ describe("motion from other tools", () => {
     moved.pose(0.5);
     motion.pose(0.5);
     expect(jointsApart(dst, still, false).cm).toBeLessThan(0.01);
+  });
+});
+
+describe("the nerve x-ray", () => {
+  test("its nerves follow every pose without one pulled across the body (a hanging hand's once bound to the thigh beside it)", () => {
+    const rig = loadRig(), head = M.head.wearHead(rig, new M.VoiceModel(M.BODIES.male, 48000));
+    const nerves = new M.nerves.Nerves(rig, head), camera = new THREE.PerspectiveCamera();
+    // each fibre's gaps between its control points, at the neutral pose it was built in
+    const gaps = nerves.fibres.map((f) => f.p.slice(1).map((p, i) => p.distanceTo(f.p[i])));
+    const pulled: string[] = [];
+    for (const [name, pose] of Object.entries(M.pose.PRESETS)) {
+      rig.pose(pose);
+      head.update(camera, M.REST_ARTIC, null, 0);
+      nerves.pose();
+      nerves.fibres.forEach((f, i) => {
+        f.p.forEach((p, j) => {
+          if (![p.x, p.y, p.z].every(Number.isFinite)) pulled.push(`${name}: fibre ${i} point ${j} isn't finite`);
+          const was = gaps[i][j - 1], now = j ? p.distanceTo(f.p[j - 1]) : 0;
+          if (j && now > Math.max(2.5 * was, was + 6)) pulled.push(`${name}: fibre ${i} (kind ${f.kind}) gap ${j}: ${was.toFixed(1)} → ${now.toFixed(1)} cm at y ${p.y.toFixed(0)}`);
+        });
+      });
+    }
+    expect(pulled).toEqual([]);
+  });
+
+  test("where nerves meet they stay met in every pose, and a twig stays on its nerve as drawn (a plexus once came apart at the armpit by 11 cm, a twig off its curve by 1.5 cm)", () => {
+    const rig = loadRig(), head = M.head.wearHead(rig, new M.VoiceModel(M.BODIES.male, 48000));
+    const nerves = new M.nerves.Nerves(rig, head), camera = new THREE.PerspectiveCamera();
+    // the points that are one place at the neutral pose the nerves were built in
+    const groups = new Map<string, THREE.Vector3[]>();
+    for (const f of nerves.fibres) {
+      for (const p of f.p) {
+        const k = [p.x, p.y, p.z].map((c) => Math.round(c * 100)).join();
+        groups.set(k, [...(groups.get(k) ?? []), p]);
+      }
+    }
+    const joins = [...groups.values()].filter((g) => g.length > 1);
+    expect(joins.length).toBeGreaterThan(100);
+    /** how far a point is off a polyline */
+    const off = (q: THREE.Vector3, line: THREE.Vector3[]) => Math.min(...line.slice(1).map((b, i) => new THREE.Line3(line[i], b).closestPointToPoint(q, true, new THREE.Vector3()).distanceTo(q)));
+    const apart: string[] = [];
+    for (const [name, pose] of Object.entries(M.pose.PRESETS)) {
+      rig.pose(pose);
+      head.update(camera, M.REST_ARTIC, null, 0);
+      nerves.pose();
+      for (const g of joins) {
+        const d = Math.max(...g.map((p) => p.distanceTo(g[0])));
+        if (d > 0.05) apart.push(`${name}: a junction at y ${g[0].y.toFixed(0)} came ${d.toFixed(2)} cm apart`);
+      }
+      // against the line its nerve is drawn along (a curve through its points, not the straight line between them)
+      for (const f of nerves.fibres) {
+        if (!f.twig?.first) continue;
+        const d = off(f.p[0], M.nerves.drawnLine(f.twig.of));
+        if (d > 0.01) apart.push(`${name}: a twig ${d.toFixed(2)} cm off its nerve as drawn`);
+      }
+    }
+    expect(apart).toEqual([]);
+  });
+
+  test("the x-ray's depth colours don't jump as the camera comes in (the range once switched from the body's to the head's at 150 cm)", () => {
+    const rig = loadRig(), head = M.head.wearHead(rig, new M.VoiceModel(M.BODIES.male, 48000));
+    const view = new M.nerves.NerveView(new M.nerves.Nerves(rig, head)), camera = new THREE.PerspectiveCamera(30, 1, 5, 5000);
+    const U = view.mat.uniforms, target = new THREE.Vector3(1, 12, 0).applyMatrix4(head.mount.matrix);
+    // straight in at the face, 1 cm at a time, from the whole body to close up
+    let last: [number, number] | null = null, worst = 0;
+    for (let d = 400; d >= 40; d--) {
+      camera.position.copy(target).add(new THREE.Vector3(d, 0.1 * d, 0.45 * d).normalize().multiplyScalar(d));
+      camera.lookAt(target);
+      camera.updateMatrixWorld(true);
+      view.update(camera, M.REST_ARTIC, null, 0, 900);
+      const now: [number, number] = [U.uNear.value, U.uFar.value];
+      // how far the range's ends move against its width: a sudden shift recolours everything
+      if (last) worst = Math.max(worst, ...now.map((v, i) => Math.abs(v - last![i]) / (now[1] - now[0])));
+      else {
+        // far off, the body's range: the hips ± 30 cm
+        const hips = -rig.P[0].clone().applyMatrix4(camera.matrixWorldInverse).z;
+        expect((now[0] + now[1]) / 2).toBeCloseTo(hips, 3);
+        expect(now[1] - now[0]).toBeCloseTo(60, 3);
+      }
+      last = now;
+    }
+    expect(worst).toBeLessThan(0.05);
+    // close up, the head's: ± 14 cm
+    expect(last![1] - last![0]).toBeCloseTo(28, 3);
+  });
+
+  test("the by-function look is calmed from the torso view in, not only at the head (its arms and cord washed out white there)", () => {
+    const rig = loadRig(), head = M.head.wearHead(rig, new M.VoiceModel(M.BODIES.male, 48000));
+    const view = new M.nerves.NerveView(new M.nerves.Nerves(rig, head)), camera = new THREE.PerspectiveCamera(30, 1, 5, 5000);
+    const target = new THREE.Vector3(1, 12, 0).applyMatrix4(head.mount.matrix);
+    /** how calmed it is with the head at this many px per cm on a 900 px canvas */
+    const close = (look: "function" | "xray", pxPerCm: number) => {
+      view.look = look;
+      const d = 900 / (2 * pxPerCm * Math.tan((15 * Math.PI) / 180));
+      camera.position.copy(target).add(new THREE.Vector3(1, 0.1, 0.45).normalize().multiplyScalar(d));
+      camera.lookAt(target);
+      camera.updateMatrixWorld(true);
+      view.update(camera, M.REST_ARTIC, null, 0, 900);
+      // what the look is drawn with follows it
+      expect(view.mat.uniforms.uBright.value).toBeCloseTo(1 - 0.35 * view.close, 6);
+      return view.close;
+    };
+    // the playground's body, torso and head views on a 900 px canvas: about 3.5, 8.6 and 16
+    expect(close("function", 3.5)).toBe(0);
+    expect(close("function", 8.6)).toBeGreaterThan(0.5);
+    expect(close("function", 16)).toBe(1);
+    // the x-ray by depth wasn't washed out there: as it was
+    expect(close("xray", 8.6)).toBeLessThan(0.01);
+  });
+
+  test("its nerves are in the rig's own frame, wherever the rig's parent puts it (the head's were once moved by it twice)", () => {
+    const rig = loadRig(), head = M.head.wearHead(rig, new M.VoiceModel(M.BODIES.male, 48000));
+    const nerves = new M.nerves.Nerves(rig, head), view = new M.nerves.NerveView(nerves), camera = new THREE.PerspectiveCamera();
+    camera.position.set(300, 40, 175);
+    /** the nerves' points in the rig's frame, and where the clearing behind the right eye is in the world */
+    const posed = () => {
+      rig.pose(M.pose.PRESETS.run);
+      view.update(camera, M.REST_ARTIC, null, 1 / 60, 900);
+      view.pose();
+      const eye = (view.mat.uniforms.uClear.value as THREE.Vector4[])[0];
+      return { points: nerves.fibres.flatMap((f) => f.p.map((p) => p.clone())), eye: new THREE.Vector3(eye.x, eye.y, eye.z), radius: eye.w };
+    };
+    const alone = posed();
+    // the same rig put 30 cm along by a parent of the nerves' mesh and the head's mount
+    const parent = new THREE.Group();
+    parent.position.set(30, 0, -12);
+    parent.scale.setScalar(0.65);
+    parent.add(view.mesh, head.mount);
+    // (its world matrix not brought up to date first: update does that)
+    const moved = posed();
+    expect(Math.max(...alone.points.map((p, i) => p.distanceTo(moved.points[i])))).toBeLessThan(1e-4);
+    expect(moved.eye.distanceTo(parent.localToWorld(alone.eye))).toBeLessThan(1e-4);
+    expect(moved.radius).toBeCloseTo(0.65 * alone.radius, 6);
+    expect(alone.points.every((p) => [p.x, p.y, p.z].every(Number.isFinite))).toBe(true);
+    expect((view.mesh.geometry as THREE.InstancedBufferGeometry).instanceCount).toBeGreaterThan(10000);
   });
 });

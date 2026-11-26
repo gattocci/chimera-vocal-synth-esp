@@ -25,8 +25,9 @@ and the CLI) under a React UI. See the README.
   `crates/chimera-plugin/`: CLAP, VST3 and AU (`docs/plugin.md`).
 - `src/wasm/`: the UI's facade over the engine. `src/worklet/`: the AudioWorklet. `src/ui/`: React
   and the canvas renderers. `src/song/`: Sing's tunes, fitting words to them, clip recording.
-- `src/rig/`: a body the 3D head can be worn on (`docs/rig.md`); `rig.html` is its dev page and
-  `tools/rig/gen-body.ts` makes its mesh (`src/rig/body.rig.bin`: generated, never edited).
+- `src/rig/`: a body the 3D head can be worn on (`docs/rig.md`); `rig.html` is its dev playground
+  (wireframe and nerve x-ray), and `tools/rig/gen-body.ts` makes its mesh
+  (`src/rig/body.rig.bin`: generated, never edited).
 - `tests/`: bun tests on the wasm build. `tools/`: e2e, layout lint, spectrogram, speech judges
   (`asr/` Whisper, `tsp/` the real speakers' data).
 - `docs/`: architecture, the engine contract (`rust-engine.md`), the UI look, the singer and

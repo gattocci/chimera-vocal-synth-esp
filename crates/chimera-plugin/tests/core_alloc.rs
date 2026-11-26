@@ -36,7 +36,7 @@ unsafe impl GlobalAlloc for Counting {
 static A: Counting = Counting;
 
 fn params() -> VoiceParams {
-    VoiceParams { vibrato: 35.0, vibrato_rate: 6.0, breath: 8.0, pressed: 0.5, bright: 0.25, breathy: 0.15, rough: 0.1, fry: 0.0, glide: 0.06, ring: 0.0, restart: true }
+    VoiceParams { vibrato: 35.0, vibrato_rate: 6.0, breath: 8.0, pressed: 0.5, bright: 0.25, breathy: 0.15, rough: 0.1, fry: 0.0, glide: 0.06, ring: 0.0, restart: true, mpe: true }
 }
 
 #[test]
@@ -100,9 +100,11 @@ fn the_audio_threads_path_does_not_allocate() {
         measured(&mut c, &params(), t, &mut buf, &[]);
         for k in 0..8u8 {
             let m = 50 + (k * 3 + round) % 20;
-            measured(&mut c, &params(), t, &mut buf, &[Event::NoteOn { midi: m, velocity: 100.0 }, Event::Bend(0.6)]);
-            measured(&mut c, &params(), t, &mut buf, &[]);
-            measured(&mut c, &params(), t, &mut buf, &[Event::NoteOn { midi: m + 2, velocity: 60.0 }]);
+            // an MPE note: its channel's bend, pressure and slide, and poly pressure
+            let ch = 1 + k % 15;
+            measured(&mut c, &params(), t, &mut buf, &[Event::Slide { channel: ch, value: 0.4 }, Event::NoteOn { midi: m, velocity: 100.0, channel: ch }, Event::Bend { channel: ch, value: 0.6 }, Event::Bend { channel: 0, value: 0.6 }]);
+            measured(&mut c, &params(), t, &mut buf, &[Event::Pressure { channel: ch, value: 0.7 }, Event::KeyPressure { midi: m, value: 0.5 }, Event::Slide { channel: ch, value: 0.9 }]);
+            measured(&mut c, &params(), t, &mut buf, &[Event::NoteOn { midi: m + 2, velocity: 60.0, channel: 0 }]);
             measured(&mut c, &params(), t, &mut buf, &[Event::NoteOff { midi: m }, Event::NoteOff { midi: m + 2 }]);
         }
         // the editor's commands
@@ -116,19 +118,19 @@ fn the_audio_threads_path_does_not_allocate() {
         measured(&mut c, &params(), t, &mut buf, &[]);
         shared.ui_note(UiNote { midi: 60, velocity: 96.0, on: false });
         // a parameter moved
-        let moved = VoiceParams { breathy: 0.1 * round as f32, ring: 0.1 * round as f32, ..params() };
+        let moved = VoiceParams { breathy: 0.1 * round as f32, ring: 0.1 * round as f32, mpe: round % 2 == 0, ..params() };
         measured(&mut c, &moved, t, &mut buf, &[]);
         // Play mode and back
         shared.edit(|p| {
             p.mode = Some(Mode::Play);
             p.hold = Some(true);
         });
-        measured(&mut c, &params(), t, &mut buf, &[Event::NoteOn { midi: 57, velocity: 96.0 }]);
+        measured(&mut c, &params(), t, &mut buf, &[Event::NoteOn { midi: 57, velocity: 96.0, channel: 0 }]);
         measured(&mut c, &params(), t, &mut buf, &[Event::NoteOff { midi: 57 }]);
         // Speak: a note, the buttons, new plans, the chart, a long line
         shared.edit(|p| p.mode = Some(Mode::Speak));
-        measured(&mut c, &params(), t, &mut buf, &[Event::NoteOn { midi: 64, velocity: 96.0 }]);
-        measured(&mut c, &params(), t, &mut buf, &[Event::NoteOff { midi: 64 }, Event::NoteOn { midi: 40, velocity: 96.0 }, Event::Bend(0.3)]);
+        measured(&mut c, &params(), t, &mut buf, &[Event::NoteOn { midi: 64, velocity: 96.0, channel: 0 }]);
+        measured(&mut c, &params(), t, &mut buf, &[Event::NoteOff { midi: 64 }, Event::NoteOn { midi: 40, velocity: 96.0, channel: 3 }, Event::Bend { channel: 3, value: 0.3 }, Event::AllOff]);
         shared.edit(|p| {
             p.speak_next = true;
             p.speech_cursor = Some(0);
@@ -139,7 +141,7 @@ fn the_audio_threads_path_does_not_allocate() {
         if let Some(lines) = speeches.next() {
             shared.send_speech(lines, true);
         }
-        measured(&mut c, &params(), t, &mut buf, &[Event::NoteOn { midi: 60, velocity: 96.0 }]);
+        measured(&mut c, &params(), t, &mut buf, &[Event::NoteOn { midi: 60, velocity: 96.0, channel: 0 }]);
         measured(&mut c, &params(), t, &mut buf, &[]);
         if let Some(pad) = pads.next() {
             shared.send_pad(pad);
@@ -148,8 +150,8 @@ fn the_audio_threads_path_does_not_allocate() {
         // Beatbox, following the host: steps, pads, both owners' keys, the close mic, a new pattern
         shared.edit(|p| p.mode = Some(Mode::Beatbox));
         let at = |beats: f64| Transport { playing: true, position: Some(beats), beats: Some(beats), tempo: Some(140.0), samples: 512 };
-        measured(&mut c, &params(), at(0.0), &mut buf, &[Event::NoteOn { midi: 36, velocity: 110.0 }]);
-        measured(&mut c, &params(), at(0.03), &mut buf, &[Event::NoteOn { midi: 64, velocity: 96.0 }, Event::NoteOn { midi: 38, velocity: 90.0 }]);
+        measured(&mut c, &params(), at(0.0), &mut buf, &[Event::NoteOn { midi: 36, velocity: 110.0, channel: 0 }]);
+        measured(&mut c, &params(), at(0.03), &mut buf, &[Event::NoteOn { midi: 64, velocity: 96.0, channel: 0 }, Event::NoteOn { midi: 38, velocity: 90.0, channel: 0 }]);
         shared.ui_note(UiNote { midi: 64, velocity: 96.0, on: true });
         shared.ui_hit(BeatStep::new("K"));
         if let Some(steps) = patterns.next() {
@@ -169,11 +171,11 @@ fn the_audio_threads_path_does_not_allocate() {
             beats += 0.027;
         }
         measured(&mut c, &params(), at(0.0), &mut buf, &[Event::NoteOff { midi: 64 }]);
-        measured(&mut c, &params(), Transport::default(), &mut buf, &[Event::NoteOn { midi: 64, velocity: 96.0 }, Event::NoteOff { midi: 64 }]);
+        measured(&mut c, &params(), Transport::default(), &mut buf, &[Event::NoteOn { midi: 64, velocity: 96.0, channel: 0 }, Event::NoteOff { midi: 64 }]);
         // and running by itself while the host is stopped
         shared.edit(|p| p.beat_playing = Some(true));
         for _ in 0..10 {
-            measured(&mut c, &params(), Transport::default(), &mut buf, &[Event::NoteOn { midi: 42, velocity: 96.0 }]);
+            measured(&mut c, &params(), Transport::default(), &mut buf, &[Event::NoteOn { midi: 42, velocity: 96.0, channel: 0 }]);
         }
         shared.edit(|p| p.mode = Some(Mode::Sing));
         measured(&mut c, &params(), t, &mut buf, &[]);

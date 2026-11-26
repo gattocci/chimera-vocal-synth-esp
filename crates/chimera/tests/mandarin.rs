@@ -212,3 +212,24 @@ fn chang_after_a_degree_word() {
     assert_eq!(l.read("很长大"), ["hen2", "zhang3", "da4"]); // and 3-3 sandhi on 很
     assert_eq!(l.read("长"), ["zhang3"]);
 }
+
+#[test]
+fn the_demo_song_reads_one_syllable_per_note() {
+    // 送别, the Mandarin demo song, through the lexicon the page loads: a syllable to each note (a
+    // missing reading would shift every later word onto the wrong note), 长亭 read cháng, not zhǎng
+    use chimera::phonetics::songs::DEMO_SONGS;
+    use std::io::Read;
+    let path = format!("{}/../../public/data/mandarin.txt.gz", env!("CARGO_MANIFEST_DIR"));
+    let mut text = String::new();
+    flate2::read::GzDecoder::new(&std::fs::read(&path).unwrap()[..]).read_to_string(&mut text).unwrap();
+    let mut l = MandarinLexicon::new();
+    l.load(&text);
+    let song = DEMO_SONGS.iter().find(|s| s.name == "送别").expect("the Mandarin demo song");
+    let s = read_lyrics(song.lyrics, &[&Mandarin(&l)]);
+    assert_eq!(s.len(), song.notes.len());
+    assert_eq!(s.iter().filter(|x| x.melisma == Some(true)).count(), 12);
+    let sung: Vec<String> = s.iter().filter(|x| x.melisma != Some(true)).map(ipa).collect();
+    assert_eq!(sung[0], "tʂʰɑŋ");
+    let at = |c: &str| ipa(s.iter().find(|x| x.text == c).unwrap());
+    assert_eq!((at("涯"), at("角"), at("落")), ("ia".into(), "tɕ˭iaʊ̠".into(), "lu̠ɔ".into()));
+}

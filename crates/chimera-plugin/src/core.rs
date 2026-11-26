@@ -12,7 +12,7 @@ use chimera::anatomy::human::{ArticKey, ArticPatch, BodyMix};
 use chimera::control::score::{Gesture, Label};
 use chimera::control::singer::{Singer, syllables_from};
 use chimera::engine::{Engine, SUB_BLOCK};
-use chimera::math::{midi_to_hz, pow};
+use chimera::math::{exp, midi_to_hz, pow};
 use chimera::phonetics::Syllable;
 use chimera::phonetics::beatbox::{BEAT_PRESETS, BeatStep, parse_beat};
 use chimera::phonetics::sing::LiveSyllable;
@@ -31,6 +31,22 @@ pub const DEFAULT_LYRICS: &str = "Hello there, I am a voice made of air.";
 const MAX_UI_NOTES: usize = 256;
 /// Pitch bend range, each way (semitones).
 const BEND_RANGE: f64 = 2.0;
+/// A note channel's pitch bend range in MPE, each way (semitones): the MPE default.
+const MPE_BEND_RANGE: f64 = 48.0;
+/// Full pressure raises the breath by this fraction of the Breath parameter.
+const PRESSURE_DEPTH: f64 = 0.75;
+/// How far a full slide moves the brightness from where the note started.
+const SLIDE_DEPTH: f64 = 1.0;
+/// A slide this soon after its note starts (s) is where the finger landed. A controller sends the
+/// starting slide before the note, but clap-wrapper's VST3 layer passes on one value a block, at
+/// the block's last one's time: after the note, by up to a block.
+const SLIDE_LANDING: f64 = 0.05;
+/// The Breath parameter's maximum (cmH2O): pressure doesn't push past it.
+pub const BREATH_MAX: f32 = 22.0;
+/// Pressure and brightness glide to a new value with this time constant (s), a step every this
+/// many samples.
+const EXPR_GLIDE: f64 = 0.012;
+const EXPR_STEP: usize = 64;
 /// Telemetry snapshots a second, while someone is watching (as the browser's ~60 Hz).
 const TELEMETRY_RATE: f64 = 60.0;
 /// A poll keeps telemetry flowing for this long (s).
@@ -171,6 +187,8 @@ pub struct VoiceParams {
     pub glide: f32,
     pub ring: f32,
     pub restart: bool,
+    /// MIDI channels 1–15 are MPE note channels, each with its own bend and slide
+    pub mpe: bool,
 }
 
 /// What the host says about the transport this block.
@@ -186,16 +204,22 @@ pub struct Transport {
     pub samples: usize,
 }
 
-/// A host event, at the point in the block [`Core::event`] is called.
+/// A host event, at the point in the block [`Core::event`] is called. Channels are 0–15.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Event {
     /// `velocity` in MIDI units (0–127)
-    NoteOn { midi: u8, velocity: f64 },
+    NoteOn { midi: u8, velocity: f64, channel: u8 },
     NoteOff { midi: u8 },
     /// all notes off, all sound off, a choke
     AllOff,
     /// 0..1, 0.5 centred
-    Bend(f32),
+    Bend { channel: u8, value: f32 },
+    /// channel pressure, 0..1
+    Pressure { channel: u8, value: f32 },
+    /// poly pressure, 0..1
+    KeyPressure { midi: u8, value: f32 },
+    /// CC 74, 0..1
+    Slide { channel: u8, value: f32 },
 }
 
 /// A note from the on-screen keys.
@@ -576,9 +600,34 @@ pub struct Core {
     spoken_line: i32,
     spoken_generation: u32,
     spoken_t0: f64,
-    /// pitch ratios: from the key that said this line, and the pitch wheel
+    /// pitch ratio from the key that said this line
     key_bend: f64,
-    wheel_bend: f64,
+    /// each channel's bend, pressure and slide, and its slide when its last note started
+    bend: [f32; 16],
+    pressure: [f32; 16],
+    slide: [f32; 16],
+    slide_origin: [f32; 16],
+    /// samples left of each channel's landing (`SLIDE_LANDING` after a note starts, `landing`
+    /// samples): a slide in it is where the finger landed, not a move
+    slide_landing: [usize; 16],
+    landing: usize,
+    /// the last bend from any channel: the wheel when MPE is off
+    last_bend: f32,
+    /// the channel each key last started on (the on-screen keys: 0)
+    note_channel: [u8; 128],
+    /// the last note started (Speak, Beatbox)
+    last_on: Option<u8>,
+    /// the note whose channel's expression moves the voice, and that channel
+    expr_note: Option<u8>,
+    expr_channel: u8,
+    /// each key's poly pressure
+    key_pressure: [f32; 128],
+    /// the pressure and brightness the engine has now. They glide to `expression()`: a step every
+    /// `EXPR_STEP` samples (`expr_left` to the next), each `expr_coef` of the way left
+    expr_now: (f64, f64),
+    expr_moving: bool,
+    expr_left: usize,
+    expr_coef: f64,
     /// the sequencer is following the host's transport
     following: bool,
     follow_host: bool,
@@ -640,7 +689,22 @@ impl Core {
             spoken_generation: 0,
             spoken_t0: 0.0,
             key_bend: 1.0,
-            wheel_bend: 1.0,
+            bend: [0.5; 16],
+            pressure: [0.0; 16],
+            slide: [0.5; 16],
+            slide_origin: [0.5; 16],
+            slide_landing: [0; 16],
+            landing: (SLIDE_LANDING * sample_rate) as usize,
+            last_bend: 0.5,
+            note_channel: [0; 128],
+            last_on: None,
+            expr_note: None,
+            expr_channel: 0,
+            key_pressure: [0.0; 128],
+            expr_now: (0.0, 0.0),
+            expr_moving: false,
+            expr_left: 0,
+            expr_coef: 1.0 - exp(-(EXPR_STEP as f64 / sample_rate) / EXPR_GLIDE),
             following: false,
             follow_host: settings.beat.follow,
             host_playing: false,
@@ -656,6 +720,7 @@ impl Core {
         core.engine.set_beat_steps(&settings.beat.steps);
         core.engine.set_beat_tempo(Some(settings.beat.bpm), Some(settings.beat.swing));
         core.apply_params();
+        core.settle_expression();
         // a voice's first control step sizes some of its buffers: not on the audio thread
         core.engine.render(&mut [0.0; SUB_BLOCK]);
         core
@@ -684,12 +749,11 @@ impl Core {
         self.singer.vibrato = p.vibrato as f64;
         // while singing, the notes' own gestures carry the vibrato: a base depth would shake the onset
         let depth = if self.mode == Mode::Play { p.vibrato as f64 } else { 0.0 };
+        // the Breath and Bright dials glide, with the pressure and slide on them (`render`)
         self.engine.set_source(&SourcePatch {
             vibrato_depth: Some(depth),
             vibrato_rate: Some(p.vibrato_rate as f64),
-            pressure: Some(p.breath as f64),
             tension: Some(p.pressed as f64),
-            brightness: Some(p.bright as f64),
             breathiness: Some(p.breathy as f64),
             roughness: Some(p.rough as f64),
             fry: Some(p.fry as f64),
@@ -697,6 +761,100 @@ impl Core {
             ..Default::default()
         });
         self.engine.set_artic(&ArticPatch::default().with(ArticKey::Epilarynx, p.ring as f64), None);
+        self.glide_expression();
+        // the MPE switch changes which channels bend what
+        self.update_bend();
+    }
+
+    /// The engine's bend: the key's transposition, the wheel, and the sounding note's own bend.
+    fn update_bend(&mut self) {
+        let mpe = self.params.mpe;
+        let wheel = if mpe { self.bend[0] } else { self.last_bend };
+        let ch = self.expr_channel as usize;
+        let note = if mpe && ch != 0 { pow(2.0, (self.bend[ch] as f64 - 0.5) * 2.0 * MPE_BEND_RANGE / 12.0) } else { 1.0 };
+        self.engine.set_bend(self.key_bend * pow(2.0, (wheel as f64 - 0.5) * 2.0 * BEND_RANGE / 12.0) * note);
+    }
+
+    /// The lung pressure and brightness, with the sounding note's pressure and slide on the dials.
+    fn expression(&self) -> (f64, f64) {
+        let ch = self.expr_channel as usize;
+        let press = self.pressure[ch].max(self.expr_note.map_or(0.0, |note| self.key_pressure[note as usize])) as f64;
+        let breath = (self.params.breath as f64 * (1.0 + PRESSURE_DEPTH * press)).min(BREATH_MAX as f64);
+        let slide = if self.params.mpe { (self.slide[ch] - self.slide_origin[ch]) as f64 * SLIDE_DEPTH } else { 0.0 };
+        (breath, (self.params.bright as f64 + slide).clamp(0.0, 1.0))
+    }
+
+    /// The pressure, the slide or their dials moved: glide there. Controllers come in steps (7-bit
+    /// ones, and through the VST3 layer once a block), which the voice would otherwise repeat.
+    fn glide_expression(&mut self) {
+        if !self.expr_moving {
+            self.expr_moving = true;
+            self.expr_left = 0;
+        }
+    }
+
+    /// One step of the glide.
+    fn step_expression(&mut self) {
+        let (pressure, brightness) = self.expression();
+        let (dp, db) = (pressure - self.expr_now.0, brightness - self.expr_now.1);
+        if dp.abs() < 0.01 && db.abs() < 0.001 {
+            self.expr_now = (pressure, brightness);
+            self.expr_moving = false;
+        } else {
+            self.expr_now.0 += dp * self.expr_coef;
+            self.expr_now.1 += db * self.expr_coef;
+        }
+        self.engine.set_source(&SourcePatch { pressure: Some(self.expr_now.0), brightness: Some(self.expr_now.1), ..Default::default() });
+    }
+
+    /// Put the pressure and brightness where they are going, at once.
+    fn settle_expression(&mut self) {
+        self.expr_now = self.expression();
+        self.expr_moving = false;
+        self.engine.set_source(&SourcePatch { pressure: Some(self.expr_now.0), brightness: Some(self.expr_now.1), ..Default::default() });
+    }
+
+    /// The note now sounding: its channel's expression moves the voice. With nothing sounding the
+    /// last one's channel stays, so a release tail keeps following it.
+    fn sounding(&self) -> Option<u8> {
+        match self.mode {
+            Mode::Sing => self.singer.sounding_note(),
+            Mode::Play => self.play_keys.last().copied(),
+            Mode::Speak | Mode::Beatbox => self.last_on,
+        }
+    }
+
+    /// A key starts a note on this channel (before it is pressed).
+    fn note_started(&mut self, midi: u8, channel: u8) {
+        let ch = channel as usize;
+        self.note_channel[midi as usize] = channel;
+        self.slide_origin[ch] = self.slide[ch];
+        self.slide_landing[ch] = self.landing;
+        // a controller needn't send a closing zero
+        self.key_pressure[midi as usize] = 0.0;
+        self.last_on = Some(midi);
+    }
+
+    /// A key went down or up: follow the note now sounding.
+    fn follow_expression(&mut self) {
+        let Some(note) = self.sounding() else { return };
+        self.expr_note = Some(note);
+        self.expr_channel = self.note_channel[note as usize];
+        // the same key on the same channel still starts its slide over
+        self.update_bend();
+        self.glide_expression();
+    }
+
+    /// Every channel's bend, pressure and slide back to rest.
+    fn clear_expression(&mut self) {
+        self.bend = [0.5; 16];
+        self.last_bend = 0.5;
+        self.pressure = [0.0; 16];
+        self.slide = [0.5; 16];
+        self.slide_origin = [0.5; 16];
+        self.key_pressure = [0.0; 128];
+        self.update_bend();
+        self.glide_expression();
     }
 
     fn update_gate(&mut self) {
@@ -863,10 +1021,12 @@ impl Core {
     /// Say the next line, at this pitch ratio. The whole contour moves through the bend, so a plan
     /// isn't rebuilt per note.
     fn say_next(&mut self, key_bend: f64) {
-        let Some(gestures) = self.speech.get(self.speech_cursor) else { return };
+        if self.speech_cursor >= self.speech.len() {
+            return;
+        }
         self.key_bend = key_bend;
-        self.engine.set_bend(self.key_bend * self.wheel_bend);
-        let t0 = self.engine.schedule(gestures, SPEECH_LEAD, true);
+        self.update_bend();
+        let t0 = self.engine.schedule(&self.speech[self.speech_cursor], SPEECH_LEAD, true);
         self.mark_spoken(self.speech_cursor as i32, self.speech_generation, t0);
         self.speech_cursor = (self.speech_cursor + 1) % self.speech.len();
     }
@@ -877,7 +1037,7 @@ impl Core {
             self.mark_spoken(NOT_SPEAKING, 0, 0.0);
         }
         self.key_bend = 1.0;
-        self.engine.set_bend(self.wheel_bend);
+        self.update_bend();
     }
 
     fn lift_ui_keys(&mut self) {
@@ -968,7 +1128,7 @@ impl Core {
             p.retired_pad = Some(old);
             if self.mode == Mode::Speak {
                 self.key_bend = 1.0;
-                self.engine.set_bend(self.wheel_bend);
+                self.update_bend();
                 let t0 = self.engine.schedule(&self.pad, SPEECH_LEAD, true);
                 self.mark_spoken(SAYING_PAD, generation, t0);
             }
@@ -1012,17 +1172,24 @@ impl Core {
         if p.clear_ui_keys {
             p.clear_ui_keys = false;
             self.lift_ui_keys();
+            self.follow_expression();
         }
         let Pending { notes, .. } = &mut *p;
         for n in notes.drain(..) {
             if self.mode == Mode::Beatbox {
+                if n.on {
+                    self.note_started(n.midi & 127, 0);
+                }
                 self.beat_key(Owner::Ui, n.midi & 127, n.velocity, n.on);
+                self.follow_expression();
                 continue;
             }
             let bit = 1u128 << (n.midi & 127);
             if n.on {
                 self.ui_keys |= bit;
+                // a key the host already holds stays the host's note, on its channel
                 if self.host_keys & bit == 0 {
+                    self.note_started(n.midi & 127, 0);
                     self.press(n.midi & 127, n.velocity);
                 }
             } else {
@@ -1032,6 +1199,7 @@ impl Core {
                     self.lift(n.midi & 127);
                 }
             }
+            self.follow_expression();
         }
     }
 
@@ -1065,34 +1233,85 @@ impl Core {
     /// A host event. Render up to its sample first.
     pub fn event(&mut self, ev: Event) {
         match ev {
-            Event::NoteOn { midi, velocity } if self.mode == Mode::Beatbox => self.beat_key(Owner::Host, midi & 127, velocity, true),
-            Event::NoteOff { midi } if self.mode == Mode::Beatbox => self.beat_key(Owner::Host, midi & 127, 0.0, false),
-            Event::NoteOn { midi, velocity } => {
-                let bit = 1u128 << (midi & 127);
-                self.host_keys |= bit;
-                // a repeat from the same owner is a new note; a key the UI already holds isn't
-                if self.ui_keys & bit == 0 {
-                    self.press(midi & 127, velocity);
+            Event::NoteOn { midi, velocity, channel } => {
+                let midi = midi & 127;
+                let bit = 1u128 << midi;
+                if self.mode == Mode::Beatbox {
+                    self.note_started(midi, channel & 15);
+                    self.beat_key(Owner::Host, midi, velocity, true);
+                } else {
+                    self.host_keys |= bit;
+                    // a repeat from the same owner is a new note; a key the UI already holds isn't
+                    if self.ui_keys & bit == 0 {
+                        self.note_started(midi, channel & 15);
+                        self.press(midi, velocity);
+                    }
                 }
+                self.follow_expression();
             }
             Event::NoteOff { midi } => {
-                let bit = 1u128 << (midi & 127);
-                let held = self.host_keys & bit != 0;
-                self.host_keys &= !bit;
-                if held && self.ui_keys & bit == 0 {
-                    self.lift(midi & 127);
+                let midi = midi & 127;
+                let bit = 1u128 << midi;
+                if self.mode == Mode::Beatbox {
+                    self.beat_key(Owner::Host, midi, 0.0, false);
+                } else {
+                    let held = self.host_keys & bit != 0;
+                    self.host_keys &= !bit;
+                    if held && self.ui_keys & bit == 0 {
+                        self.lift(midi);
+                    }
+                }
+                self.follow_expression();
+            }
+            // not a controller reset: the wheel stays where it is
+            Event::AllOff => self.stop_notes(),
+            Event::Bend { channel, value } => {
+                self.bend[(channel & 15) as usize] = value;
+                self.last_bend = value;
+                self.update_bend();
+            }
+            Event::Pressure { channel, value } => {
+                self.pressure[(channel & 15) as usize] = value;
+                if channel & 15 == self.expr_channel {
+                    self.glide_expression();
                 }
             }
-            Event::AllOff => self.stop_notes(),
-            Event::Bend(value) => {
-                self.wheel_bend = pow(2.0, (value as f64 - 0.5) * 2.0 * BEND_RANGE / 12.0);
-                self.engine.set_bend(self.key_bend * self.wheel_bend);
+            Event::KeyPressure { midi, value } => {
+                self.key_pressure[(midi & 127) as usize] = value;
+                if Some(midi & 127) == self.expr_note {
+                    self.glide_expression();
+                }
+            }
+            Event::Slide { channel, value } => {
+                let ch = (channel & 15) as usize;
+                self.slide[ch] = value;
+                if self.slide_landing[ch] > 0 {
+                    self.slide_origin[ch] = value;
+                }
+                if self.params.mpe && channel & 15 == self.expr_channel {
+                    self.glide_expression();
+                }
             }
         }
     }
 
     pub fn render(&mut self, out: &mut [f32]) {
-        self.engine.render(out);
+        for left in &mut self.slide_landing {
+            *left = left.saturating_sub(out.len());
+        }
+        let mut rest = &mut *out;
+        while self.expr_moving && !rest.is_empty() {
+            if self.expr_left == 0 {
+                self.step_expression();
+                self.expr_left = EXPR_STEP;
+            }
+            let n = self.expr_left.min(rest.len());
+            let (now, later) = std::mem::take(&mut rest).split_at_mut(n);
+            self.engine.render(now);
+            self.expr_left -= n;
+            rest = later;
+        }
+        self.engine.render(rest);
         if self.mode == Mode::Beatbox && self.mic_on {
             self.close_mic.process(out);
         }
@@ -1146,8 +1365,7 @@ impl Core {
         self.engine.set_beat_playing(false);
         self.engine.stop_speech();
         self.key_bend = 1.0;
-        self.wheel_bend = 1.0;
-        self.engine.set_bend(1.0);
+        self.clear_expression();
         self.singer.set_cursor(self.start_syllable);
         self.speech_cursor = self.speech_start;
         self.transport = Transport::default();

@@ -42,7 +42,7 @@ impl ParamHost for FakeHost {
 
 fn voice_params(v: &HashMap<String, f32>) -> VoiceParams {
     let g = |id: &str| v.get(id).copied().unwrap_or(0.0);
-    VoiceParams { vibrato: g("vibrato"), vibrato_rate: g("vibrato_rate"), breath: g("breath"), pressed: g("pressed"), bright: g("bright"), breathy: g("breathy"), rough: g("rough"), fry: g("fry"), glide: g("glide"), ring: g("ring"), restart: g("restart") > 0.5 }
+    VoiceParams { vibrato: g("vibrato"), vibrato_rate: g("vibrato_rate"), breath: g("breath"), pressed: g("pressed"), bright: g("bright"), breathy: g("breathy"), rough: g("rough"), fry: g("fry"), glide: g("glide"), ring: g("ring"), restart: g("restart") > 0.5, mpe: g("mpe") > 0.5 }
 }
 
 /// `seek`'s value when there's nothing to do (a negative f64's bits).
@@ -127,9 +127,9 @@ fn main() {
                 let _ = req.as_reader().read_to_string(&mut body);
                 let x: f64 = body.trim().parse().unwrap_or(60.0);
                 let ev = match url.as_str() {
-                    "/test/note" => Event::NoteOn { midi: x as u8, velocity: 96.0 },
+                    "/test/note" => Event::NoteOn { midi: x as u8, velocity: 96.0, channel: 0 },
                     "/test/off" => Event::NoteOff { midi: x as u8 },
-                    _ => Event::Bend(x as f32),
+                    _ => Event::Bend { channel: 0, value: x as f32 },
                 };
                 host_events.lock().unwrap().push(ev);
                 let _ = req.respond(tiny_http::Response::empty(204));

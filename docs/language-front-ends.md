@@ -311,7 +311,7 @@ Every front end writes the same thing, one sung syllable per sounding note:
   English's 50 ms). Each millisecond more or less than 50 moves the voice's return by a
   millisecond; the measured voice onset also depends on the place and the voice (the Korean table
   above: 45 asked gives 53–69 ms, 90 gives 96–110).
-- `nucleus`: one vowel, or a diphthong the planner knows (Japanese's ん is a nasal, held as a hum). Falling ones (aɪ eɪ aʊ oʊ ɔɪ əʊ) hold
+- `nucleus`: one vowel, or a diphthong the planner knows (Japanese's ん is a nasal, held as a hum, and its っ before a vowel or at a word's end is a silent ʔ). Falling ones (aɪ eɪ aʊ oʊ ɔɪ əʊ) hold
   their first vowel and glide off at the note's end; rising ones (ia iɛ iɑ iʊ ua uo uɔ uɑ uə yɛ, with
   Mandarin's back u and ʊ: u̠a u̠ɔ u̠ɑ u̠ə iʊ̠, and er's əɝ aɝ) sing
   the first vowel as a quick glide of 50 ms that ends on the beat, after the initial consonant, so

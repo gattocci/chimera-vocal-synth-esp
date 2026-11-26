@@ -5,6 +5,7 @@
  */
 import { hfont, label, LABEL_MIN, labelWidth, seg } from "./render/vector.ts";
 import type { OverlayFn } from "./components/AnatomyView.tsx";
+import type { FaceView } from "./render/anatomy.ts";
 
 /** What is being said now. `key` changes with each new syllable or word (equal text may repeat). */
 export interface MouthWord {
@@ -37,10 +38,14 @@ export function advanceTrail(t: Trail, word: MouthWord | null, clock: number): v
 
 /**
  * An overlay writing `now()`'s word at the mouth in `color`; each call keeps its own trail.
- * `side` is where the face looks on screen: 1 writes to the right of the lips, −1 to the left (a
+ * `facing` is where the face looks on screen, fixed or sampled each frame: 1 writes to the right of the lips, −1 to the left (a
  * head turned to face left), so the word is always in the open space in front of the mouth.
  */
-export function mouthWords(now: () => MouthWord | null, color: string, side: 1 | -1 = 1): OverlayFn {
+export function mouthWords(
+  now: () => MouthWord | null,
+  color: string,
+  facing: 1 | -1 | ((view: FaceView, lips: { x: number; y: number }) => 1 | -1) = 1,
+): OverlayFn {
   const t: Trail = { entries: [] };
   const trail = t.entries;
   let clock = 0;
@@ -50,6 +55,7 @@ export function mouthWords(now: () => MouthWord | null, color: string, side: 1 |
     if (!trail.length) return;
     const lips = r.handles(m, f, a).find((h) => h.id === "lips");
     if (!lips) return;
+    const side = typeof facing === "function" ? facing(r, lips.pos) : facing;
     const lx = r.X(lips.pos), ly = r.Y(lips.pos);
     const x0 = lx + side * r.pxPerCm * 1.2;
     const ahead = side > 0 ? w - x0 - 14 : x0 - 14;

@@ -283,7 +283,7 @@ pub fn song(ctx: &Ctx, a: &[String]) -> Result<(), String> {
     };
 
     for song in DEMO_SONGS {
-        let syl = lyrics_to_syllables(song.lyrics, &g);
+        let syl = sung_lyrics(song.lyrics, Lang::En)?;
         let octave = match body_name {
             "female" => song.octave.female,
             "child" => song.octave.child,

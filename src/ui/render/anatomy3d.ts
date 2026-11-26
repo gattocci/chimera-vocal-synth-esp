@@ -196,7 +196,7 @@ interface Group {
   hot?: boolean;
   /** what part of the head it is, for how bright it's drawn (HeadDrawing): outside it (the ears),
    *  a feature of the face (the nose), bone (the teeth); none: inside it */
-  kind?: "outer" | "feature" | "bone";
+  kind?: "outer" | "feature" | "bone" | "brain" | "spine";
 }
 
 /** a polyline whose points the jaw carries by weight w (the lower face's skin), and the cheeks' puff by c */
@@ -470,7 +470,7 @@ function buildRest(model: VoiceModel): Rest {
         L.end();
       }
     }
-  });
+  }, false, "brain");
 
   // ---- cervical vertebrae: bodies, arches, processes; the spinal cord through them
   group(fixed, V.blueDim, 0.9, 0.6, (L) => {
@@ -490,12 +490,12 @@ function buildRest(model: VoiceModel): Rest {
       }
       L.p(ax - 0.72 * k, ym, 0).p(ax - 1.8 * k, ym - 0.55 * k, 0).end();
     }
-  });
+  }, false, "spine");
   group(fixed, V.blueDim, 0.85, 0.5, (L) => {
     const cx = P(-4.9, 0).x;
     for (let y = -4.4; y <= 11.0; y += 1.75) L.ellipse([cx, P(0, y).y, 0], [0.42 * k, 0, 0], [0, 0, 0.6 * k], 16);
     for (const s of [1, -1]) L.p(cx, P(0, -4.6).y, s * 0.6 * k).p(cx, P(0, 11.4).y, s * 0.6 * k).end();
-  });
+  }, false, "spine");
 
   // ---- nasal cavity: the septum is the 2D outline; its side walls and the turbinates beside it
   group(fixed, V.blueDim, 0.9, 0.7, (L) => {
@@ -657,6 +657,11 @@ export interface HeadDrawing {
   mounted: boolean;
   /** the lines fade out going down to height `y`, over `band` (body cm), where a neck takes over */
   fade: { y: number; band: number } | null;
+  /** parts drawn otherwise than `inner` has them (a body that draws its own): the brain, the
+   *  skull's section, the cervical spine; and the ears (1 unless set); `pop`: the eyes, nose and
+   *  lips drawn this much wider (unset: wider with `features` over 1, up to 1.35), and the
+   *  nose's ridge with them, to stand out from what's behind them */
+  parts?: { brain?: number; skull?: number; spine?: number; ears?: number; pop?: number };
 }
 export const APP_DRAWING: Readonly<HeadDrawing> = { inner: 1, bone: 1, outline: 1, shell: 1, features: 1, lipSkin: true, mounted: false, fade: null };
 
@@ -676,6 +681,9 @@ export class Anatomy3D {
   /** which way the turned home view shows the face: 1 to the right, −1 to the left (a duet's
    *  second head, so the two sing towards each other) */
   facing: 1 | -1 = 1;
+  /** the eyes look into the camera (as far as eyes turn) instead of wandering: a body's
+   *  speaker addressing the viewer. The app's head leaves it off. */
+  gazeAtCamera = false;
   private clock = 0;
   private readonly gaze = new Gaze();
   /** brows, lids, cheeks and the head's nods, from the voice (the view updates it) */
@@ -695,6 +703,8 @@ export class Anatomy3D {
   /** the airway's cross-sections this frame: centre, the grid line's direction, half-gap, half-width */
   private ring = { n: 0, s: new Float64Array(80), cx: new Float64Array(80), cy: new Float64Array(80), ux: new Float64Array(80), uy: new Float64Array(80), a: new Float64Array(80), b: new Float64Array(80) };
   private readonly v3 = new THREE.Vector3();
+  private readonly right = new THREE.Vector3();
+  private readonly toHead = new THREE.Matrix4();
   /** the narrowest constriction this frame (for the measurement label), body cm */
   caliper: { x: number; y: number; z: number; area: number } | null = null;
 
@@ -864,16 +874,18 @@ export class Anatomy3D {
   }
 
   /** body point → CSS px on the canvas */
-  project(x: number, y: number, z: number): [number, number] {
-    const v = this.v3.set(x, y, z).applyMatrix4(this.beams.group.matrixWorld).project(this.camera);
+  project(x: number, y: number, z: number, camera: THREE.Camera = this.camera): [number, number] {
+    const v = this.v3.set(x, y, z).applyMatrix4(this.beams.group.matrixWorld).project(camera);
     return [((v.x + 1) / 2) * this.w, ((1 - v.y) / 2) * this.h];
   }
 
   /** CSS px per cm at a body point, across the screen */
-  pxPerCmAt(x: number, y: number, z: number): number {
-    const e = this.camera.matrixWorld.elements;
-    const [x0, y0] = this.project(x, y, z);
-    const [x1, y1] = this.project(x + e[0], y + e[1], z + e[2]);
+  pxPerCmAt(x: number, y: number, z: number, camera: THREE.Camera = this.camera): number {
+    // the camera's right brought into the head's frame (worn on a body, the head is turned with
+    // it: the world's right added as is could point at the camera and measure next to nothing)
+    const r = this.right.setFromMatrixColumn(camera.matrixWorld, 0).transformDirection(this.toHead.copy(this.beams.group.matrixWorld).invert());
+    const [x0, y0] = this.project(x, y, z, camera);
+    const [x1, y1] = this.project(x + r.x, y + r.y, z + r.z, camera);
     return Math.hypot(x1 - x0, y1 - y0);
   }
 
@@ -888,13 +900,13 @@ export class Anatomy3D {
   }
 
   /** what the words at the mouth (and other overlays) need of this view */
-  faceView(model: VoiceModel, f: HumanFrame, a: HumanArtic): FaceView {
+  faceView(model: VoiceModel, f: HumanFrame, a: HumanArtic, camera: THREE.Camera = this.camera): FaceView {
     const lips = faceHandles(model, f, a).find((h) => h.id === "lips")!.pos;
     return {
       handles: faceHandles,
-      X: (p) => this.project(p.x, p.y, 0)[0],
-      Y: (p) => this.project(p.x, p.y, 0)[1],
-      pxPerCm: this.pxPerCmAt(lips.x, lips.y, 0),
+      X: (p) => this.project(p.x, p.y, 0, camera)[0],
+      Y: (p) => this.project(p.x, p.y, 0, camera)[1],
+      pxPerCm: this.pxPerCmAt(lips.x, lips.y, 0, camera),
     };
   }
 
@@ -935,11 +947,12 @@ export class Anatomy3D {
     this.k = k;
 
     // ---- the fixed and jaw-carried structures, each as bright as `drawing` has it
-    const d = this.drawing, widen = Math.min(1.35, 1 + 0.45 * Math.max(0, d.features - 1));
+    // (with `pop` the features' width is set apart from their brightness: bright enough to widen them would wash their colours to white)
+    const d = this.drawing, pop = d.parts?.pop, widen = pop ?? Math.min(1.35, 1 + 0.45 * Math.max(0, d.features - 1));
     B.fade = d.fade;
     for (const g of rest.fixed) {
       const feature = g.kind === "feature";
-      B.gain = feature ? d.features : g.kind === "bone" ? d.bone : g.kind === "outer" ? 1 : d.inner;
+      B.gain = feature ? d.features : g.kind === "bone" ? d.bone : g.kind === "outer" ? (d.parts?.ears ?? 1) : g.kind === "brain" ? (d.parts?.brain ?? d.inner) : g.kind === "spine" ? (d.parts?.spine ?? d.inner) : d.inner;
       const color = feature && d.features > 1 ? V.blue : g.color;
       for (const l of g.lines) B.line(l, l.length / 3, color, feature ? g.width * widen : g.width, { alpha: g.alpha, hot: g.hot });
     }
@@ -968,11 +981,13 @@ export class Anatomy3D {
 
     // ---- the midsagittal section, as the 2D view draws it
     const G = buildProfile(model, f, a);
-    B.gain = d.inner;
+    B.gain = d.parts?.skull ?? d.inner;
     line(G.inset, V.blueDim, 0.9, { alpha: 0.5 });
     line(G.skull, V.blueDim, 0.9, { close: true, alpha: 0.6 });
+    B.gain = d.parts?.brain ?? d.inner;
     line(G.brain, V.blueMid, 1.0, { close: true, alpha: 0.75 });
     line(G.sulcus, V.blueDim, 0.9);
+    B.gain = d.inner;
     line(G.nasal, V.blueMid, 1, { close: true });
     line(G.palOral, V.blueMid, 1.1);
     line(G.palNasal, V.blueMid, 1.1);
@@ -986,6 +1001,16 @@ export class Anatomy3D {
 
     B.gain = d.features;
     this.eyes(rest, dt, widen);
+    if (pop) {
+      // the nose's ridge, from the bridge down to under its tip (the midline profile's own piece of it)
+      const By = (Y: number) => bodyPoint(model)(0, Y).y, lo = By(10.9), hi = By(15.0);
+      const ridge: Vec[] = [];
+      for (const q of G.skinUpper) {
+        if (q.y >= lo && q.y <= hi) ridge.push(q);
+        else if (ridge.length) break;
+      }
+      if (ridge.length > 1) B.line(flat(ridge), ridge.length, V.blue, 1.4 * widen);
+    }
     B.gain = d.inner;
     this.airway(model, f, tele, view, k);
     this.velum(f, k);
@@ -1072,17 +1097,25 @@ export class Anatomy3D {
   // ------------------------------------------------------------------ eyes
   private eyes(rest: Rest, dt: number, widen = 1): void {
     const g = this.gaze, e = this.face;
-    g.update(this.clock, dt);
+    const cam = this.eye;
+    let at: { pitch: number; yaw: number } | undefined;
+    if (this.gazeAtCamera) {
+      // from between the eyes to the camera, held within how far eyes turn
+      const [a, b] = rest.eyes;
+      const x = cam.x - (a[0] + b[0]) / 2, y = cam.y - (a[1] + b[1]) / 2, z = cam.z - (a[2] + b[2]) / 2;
+      const clamp = (v: number, m: number) => Math.max(-m, Math.min(m, v));
+      at = { pitch: clamp(Math.atan2(y, Math.hypot(x, z)), 0.55), yaw: clamp(Math.atan2(z, x), 0.9) };
+    }
+    g.update(this.clock, dt, at);
     const r = rest.eyeR;
-    // where they look: forward, turned by the gaze (yaw towards +z, pitch up)
-    const pitch = g.pitch + 1.3 * e.lookUp;
+    // where they look: forward, turned by the gaze (yaw towards +z, pitch up); into the camera, not lifted on a high note
+    const pitch = g.pitch + (at ? 0 : 1.3 * e.lookUp);
     const d: V3 = [Math.cos(pitch) * Math.cos(g.yaw), Math.sin(pitch), Math.cos(pitch) * Math.sin(g.yaw)];
     const basis = (n: V3): [V3, V3] => {
       const up: V3 = Math.abs(n[1]) > 0.9 ? [1, 0, 0] : [0, 1, 0];
       const u = norm3(cross(up, n));
       return [u, cross(n, u)];
     };
-    const cam = this.eye;
     // the iris shows less as the lids close
     const seen = 1 - smooth(0.4, 0.9, e.lid);
     const wide = Math.max(0, e.brow);
@@ -1171,7 +1204,7 @@ export class Anatomy3D {
     P.reset();
     for (let i = 0; i <= n; i++) P.p(...pt(true, 0, -Wm + (2 * Wm * i) / n));
     if (open) for (let i = n - 1; i > 0; i--) P.p(...pt(false, 0, -Wm + (2 * Wm * i) / n));
-    B.poly(P, V.pink, 2.1, { hot: true, close: open });
+    B.poly(P, V.pink, this.drawing.parts?.pop ? 2.1 * widen : 2.1, { hot: true, close: open });
     return open ? P.a.slice(0, P.n * 3) : null;
   }
 

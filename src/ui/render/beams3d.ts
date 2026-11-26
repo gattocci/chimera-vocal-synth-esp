@@ -16,7 +16,7 @@ import { LineMaterial } from "three/addons/lines/LineMaterial.js";
 import { core } from "../colors.ts";
 
 /** line widths (CSS px) the batches draw at; a beam takes the nearest */
-const WIDTHS = [0.6, 0.85, 1.05, 1.3, 1.6, 2.1];
+const WIDTHS = [0.6, 0.85, 1.05, 1.3, 1.6, 2.1, 2.6, 3.2];
 
 /** A growable polyline of xyz points, reused between frames. */
 export class Poly {

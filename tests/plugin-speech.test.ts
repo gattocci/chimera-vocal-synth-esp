@@ -2,7 +2,7 @@
  * In the plugin Rust says the lines, and the page follows. Found by review: a reply dropped as stale
  * left the previous line's words showing, although Rust had already replaced that line.
  */
-import { expect, mock, test } from "bun:test";
+import { afterAll, expect, mock, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { gunzipSync } from "node:zlib";
 import { initEngine } from "./harness.ts";
@@ -23,6 +23,13 @@ const T0 = 10;
 /** The voice clock in the middle of the first word. */
 const first = wordSpans(phrases, plan)[0];
 const DURING_FIRST_WORD = T0 + (first.t0 + first.t1) / 2;
+
+// the tests stand in for the plugin's server by replacing fetch: put the real one back for the files
+// that run after this one (a later test fetching a file got this stub, which has no arrayBuffer)
+const realFetch = globalThis.fetch;
+afterAll(() => {
+  globalThis.fetch = realFetch;
+});
 
 /** What the plugin answers next. */
 function replies(body: unknown, ok = true): void {

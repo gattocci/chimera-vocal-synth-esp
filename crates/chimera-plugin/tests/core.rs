@@ -13,7 +13,7 @@ use std::sync::atomic::Ordering;
 const FS: f64 = 44100.0;
 
 fn params() -> VoiceParams {
-    VoiceParams { vibrato: 35.0, vibrato_rate: 6.0, breath: 8.0, pressed: 0.5, bright: 0.25, breathy: 0.15, rough: 0.1, fry: 0.0, glide: 0.06, ring: 0.0, restart: true }
+    VoiceParams { vibrato: 35.0, vibrato_rate: 6.0, breath: 8.0, pressed: 0.5, bright: 0.25, breathy: 0.15, rough: 0.1, fry: 0.0, glide: 0.06, ring: 0.0, restart: true, mpe: true }
 }
 
 fn syllables(text: &str) -> Vec<Syllable> {
@@ -34,12 +34,16 @@ fn core(shared: &Shared) -> Core {
 
 /// Run `samples` in blocks of `block`, taking each event on its sample, as `process` does.
 fn run(c: &mut Core, shared: &Shared, events: &[(usize, Event)], samples: usize, block: impl Fn(usize) -> usize) -> Vec<f32> {
+    run_with(c, shared, &params(), events, samples, block)
+}
+
+fn run_with(c: &mut Core, shared: &Shared, p: &VoiceParams, events: &[(usize, Event)], samples: usize, block: impl Fn(usize) -> usize) -> Vec<f32> {
     let mut out = vec![0.0f32; samples];
     let (mut pos, mut next, mut k) = (0, 0, 0);
     while pos < samples {
         let n = block(k).min(samples - pos);
         k += 1;
-        c.begin_block(&params(), Transport::default(), shared);
+        c.begin_block(p, Transport::default(), shared);
         let mut at = pos;
         while next < events.len() && events[next].0 < pos + n {
             let t = events[next].0;
@@ -60,7 +64,16 @@ fn run(c: &mut Core, shared: &Shared, events: &[(usize, Event)], samples: usize,
 }
 
 fn on(midi: u8) -> Event {
-    Event::NoteOn { midi, velocity: 96.0 }
+    Event::NoteOn { midi, velocity: 96.0, channel: 0 }
+}
+
+/// A note on an MPE note channel.
+fn on_ch(midi: u8, channel: u8) -> Event {
+    Event::NoteOn { midi, velocity: 96.0, channel }
+}
+
+fn bend(channel: u8, value: f32) -> Event {
+    Event::Bend { channel, value }
 }
 
 fn off(midi: u8) -> Event {
@@ -73,7 +86,8 @@ fn peak(x: &[f32]) -> f32 {
 
 fn song() -> Vec<(usize, Event)> {
     let s = FS as usize;
-    vec![(1000, on(57)), (s / 2, off(57)), (s / 2 + 77, on(60)), (s, on(64)), (s + 2000, off(60)), (3 * s / 2, off(64)), (2 * s, on(62)), (2 * s + s / 3, Event::Bend(0.8)), (3 * s, off(62))]
+    let (pressure, slide) = (|value| Event::KeyPressure { midi: 64, value }, |value| Event::Slide { channel: 0, value });
+    vec![(1000, on(57)), (s / 2, off(57)), (s / 2 + 77, on(60)), (s, on(64)), (s + 1500, pressure(0.9)), (s + 2000, off(60)), (s + 9001, pressure(0.2)), (3 * s / 2, off(64)), (2 * s, on(62)), (2 * s + 4321, slide(0.9)), (2 * s + s / 3, bend(0, 0.8)), (3 * s, off(62))]
 }
 
 #[test]
@@ -464,10 +478,146 @@ fn pitch_bend_moves_the_voice_and_centres() {
         block[3] // see TELE_HEADER
     };
     let plain = f0(&mut c, &shared);
-    run(&mut c, &shared, &[(0, Event::Bend(1.0))], FS as usize / 2, |_| 256);
+    run(&mut c, &shared, &[(0, bend(0, 1.0))], FS as usize / 2, |_| 256);
     let up = f0(&mut c, &shared);
     let semitones = 12.0 * (up / plain).log2();
     assert!((semitones - 2.0).abs() < 0.5, "a full bend should be about two semitones, got {semitones}");
+}
+
+fn close(a: f64, b: f64) -> bool {
+    (a - b).abs() < 1e-6
+}
+
+/// Samples after which a pressure or a slide has finished gliding to where it was sent.
+const GLIDED: usize = 8820;
+
+#[test]
+fn a_note_channels_bend_moves_its_note_four_octaves_each_way_and_the_wheel_adds_two_semitones() {
+    let shared = Shared::default();
+    let mut c = core(&shared);
+    let bend_now = |c: &Core| c.engine().voice().bend;
+    run(&mut c, &shared, &[(0, on_ch(60, 2)), (0, bend(2, 0.625))], 256, |_| 256);
+    assert!(close(bend_now(&c), 2.0), "an eighth of the way up is an octave: {}", bend_now(&c));
+    run(&mut c, &shared, &[(0, bend(0, 1.0))], 256, |_| 256);
+    assert!(close(bend_now(&c), 2.0 * 2f64.powf(2.0 / 12.0)), "the master channel's wheel: {}", bend_now(&c));
+    run(&mut c, &shared, &[(0, Event::AllOff)], 256, |_| 256);
+    assert!(close(bend_now(&c), 2.0 * 2f64.powf(2.0 / 12.0)), "all notes off is not a controller reset: {}", bend_now(&c));
+}
+
+#[test]
+fn closing_the_window_goes_back_to_the_hosts_note_and_its_channel() {
+    let shared = Shared::default();
+    let mut c = core(&shared);
+    let bend_now = |c: &Core| c.engine().voice().bend;
+    run(&mut c, &shared, &[(0, on_ch(57, 2)), (0, bend(2, 0.625))], 256, |_| 256);
+    shared.ui_note(UiNote { midi: 64, velocity: 96.0, on: true });
+    run(&mut c, &shared, &[], 256, |_| 256);
+    assert!(close(bend_now(&c), 1.0), "the on-screen key has no bend: {}", bend_now(&c));
+    shared.clear_ui_keys();
+    run(&mut c, &shared, &[], 256, |_| 256);
+    assert!(close(bend_now(&c), 2.0), "the host's note again, with its bend: {}", bend_now(&c));
+}
+
+#[test]
+fn an_on_screen_click_on_a_key_the_host_holds_leaves_its_channel() {
+    let shared = Shared::default();
+    let mut c = core(&shared);
+    let bend_now = |c: &Core| c.engine().voice().bend;
+    run(&mut c, &shared, &[(0, on_ch(60, 3)), (0, bend(3, 0.625))], 256, |_| 256);
+    shared.ui_note(UiNote { midi: 60, velocity: 96.0, on: true });
+    run(&mut c, &shared, &[], 256, |_| 256);
+    assert!(close(bend_now(&c), 2.0), "the click took the note's channel: {}", bend_now(&c));
+}
+
+#[test]
+fn a_bend_on_another_channel_waits_for_a_note_there() {
+    let shared = Shared::default();
+    let mut c = core(&shared);
+    let bend_now = |c: &Core| c.engine().voice().bend;
+    run(&mut c, &shared, &[(0, on_ch(60, 2)), (100, bend(3, 0.75))], 256, |_| 256);
+    assert!(close(bend_now(&c), 1.0), "another channel's bend moved the note: {}", bend_now(&c));
+    run(&mut c, &shared, &[(0, off(60)), (100, on_ch(64, 3))], 256, |_| 256);
+    assert!(close(bend_now(&c), 4.0), "the new note takes its channel's bend, two octaves up: {}", bend_now(&c));
+}
+
+#[test]
+fn with_mpe_off_every_channel_is_the_wheel_and_slide_does_nothing() {
+    let shared = Shared::default();
+    let mut c = core(&shared);
+    let plain = VoiceParams { mpe: false, ..params() };
+    let bend_now = |c: &Core| c.engine().voice().bend;
+    run_with(&mut c, &shared, &plain, &[(0, on_ch(60, 2)), (0, bend(2, 0.625)), (10, Event::Slide { channel: 2, value: 1.0 })], 256, |_| 256);
+    assert!(close(bend_now(&c), 2f64.powf(0.5 / 12.0)), "two semitones full scale: {}", bend_now(&c));
+    assert!(close(c.engine().voice().source.brightness, 0.25), "slide moved the brightness");
+    run(&mut c, &shared, &[], 256, |_| 256);
+    assert!(close(bend_now(&c), 2.0), "switching MPE on reads the channel's bend on its own scale: {}", bend_now(&c));
+}
+
+#[test]
+fn pressure_raises_the_breath_and_poly_pressure_counts_on_the_sounding_key_only() {
+    let shared = Shared::default();
+    let mut c = core(&shared);
+    let breath = |c: &Core| c.engine().voice().source.pressure;
+    // a controller's step is glided over, not repeated
+    run(&mut c, &shared, &[(0, on_ch(60, 1)), (10, Event::Pressure { channel: 1, value: 1.0 })], 256, |_| 256);
+    assert!(breath(&c) > 8.5 && breath(&c) < 12.0, "a few milliseconds in, on the way up: {}", breath(&c));
+    run(&mut c, &shared, &[], GLIDED, |_| 256);
+    assert!(close(breath(&c), 8.0 * 1.75), "full pressure: {}", breath(&c));
+    run(&mut c, &shared, &[(0, Event::Pressure { channel: 1, value: 0.0 }), (10, Event::Pressure { channel: 4, value: 1.0 })], GLIDED, |_| 256);
+    assert!(close(breath(&c), 8.0), "released, and another channel's pressure: {}", breath(&c));
+    run(&mut c, &shared, &[(0, Event::KeyPressure { midi: 60, value: 0.5 }), (10, Event::KeyPressure { midi: 62, value: 1.0 })], GLIDED, |_| 256);
+    assert!(close(breath(&c), 8.0 * 1.375), "the sounding key's poly pressure only: {}", breath(&c));
+    run(&mut c, &shared, &[(0, Event::KeyPressure { midi: 60, value: 0.0 })], GLIDED, |_| 256);
+    assert!(close(breath(&c), 8.0), "{}", breath(&c));
+    // a controller needn't send a closing zero: the key's next press starts without it
+    run(&mut c, &shared, &[(0, Event::KeyPressure { midi: 60, value: 1.0 }), (4000, off(60)), (4100, on_ch(60, 1))], GLIDED, |_| 256);
+    assert!(close(breath(&c), 8.0), "the last press's pressure: {}", breath(&c));
+    let strong = VoiceParams { breath: 20.0, ..params() };
+    run_with(&mut c, &shared, &strong, &[(0, Event::Pressure { channel: 1, value: 1.0 })], GLIDED, |_| 256);
+    assert!(close(breath(&c), 22.0), "no more than the Breath dial's top: {}", breath(&c));
+}
+
+#[test]
+fn slide_moves_the_brightness_from_where_the_note_started_and_clamps() {
+    let shared = Shared::default();
+    let mut c = core(&shared);
+    let bright = |c: &Core| c.engine().voice().source.brightness;
+    let slide = |value: f32| Event::Slide { channel: 2, value };
+    // the controller sends the starting slide just before the note
+    run(&mut c, &shared, &[(0, slide(0.7)), (0, on_ch(60, 2))], GLIDED, |_| 256);
+    assert!(close(bright(&c), 0.25), "the dial sets where the note starts: {}", bright(&c));
+    run(&mut c, &shared, &[(0, slide(0.9))], GLIDED, |_| 256);
+    assert!(close(bright(&c), 0.45), "{}", bright(&c));
+    run(&mut c, &shared, &[(0, slide(0.2))], GLIDED, |_| 256);
+    assert_eq!(bright(&c), 0.0);
+    run(&mut c, &shared, &[(0, off(60)), (10, slide(0.0)), (10, on_ch(62, 2)), (4000, slide(1.0))], GLIDED, |_| 256);
+    assert_eq!(bright(&c), 1.0);
+    // clap-wrapper's VST3 layer delivers the starting slide after the note, by up to a block
+    run(&mut c, &shared, &[(0, off(62)), (10, on_ch(64, 5)), (400, Event::Slide { channel: 5, value: 0.8 })], GLIDED, |_| 256);
+    assert!(close(bright(&c), 0.25), "a slide while the finger lands is not a move: {}", bright(&c));
+    run(&mut c, &shared, &[(0, Event::Slide { channel: 5, value: 0.9 })], GLIDED, |_| 256);
+    assert!(close(bright(&c), 0.35), "{}", bright(&c));
+    // the same pad again on the same channel, landing somewhere else
+    run(&mut c, &shared, &[(0, off(64)), (10, Event::Slide { channel: 5, value: 0.3 })], GLIDED, |_| 256);
+    assert_eq!(bright(&c), 0.0);
+    run(&mut c, &shared, &[(0, on_ch(64, 5))], GLIDED, |_| 256);
+    assert!(close(bright(&c), 0.25), "a new press starts from the dial: {}", bright(&c));
+}
+
+#[test]
+fn play_mode_falls_back_to_the_older_key_and_its_own_bend_and_pressure() {
+    let shared = Shared::default();
+    let settings = Settings { mode: Mode::Play, ..Default::default() };
+    let mut c = core_with(&settings, &shared);
+    let bend_now = |c: &Core| c.engine().voice().bend;
+    let breath = |c: &Core| c.engine().voice().source.pressure;
+    run(&mut c, &shared, &[(0, on_ch(57, 1)), (0, bend(1, 0.625)), (50, Event::KeyPressure { midi: 57, value: 1.0 }), (100, on_ch(64, 2))], GLIDED, |_| 256);
+    assert!(close(bend_now(&c), 1.0), "the newest key, unbent: {}", bend_now(&c));
+    assert!(close(breath(&c), 8.0), "and unpressed: {}", breath(&c));
+    run(&mut c, &shared, &[(0, off(64))], GLIDED, |_| 256);
+    assert_eq!(c.engine().voice().source.f0, 220.0);
+    assert!(close(bend_now(&c), 2.0), "the held key's own bend: {}", bend_now(&c));
+    assert!(close(breath(&c), 8.0 * 1.75), "and the pressure it still has: {}", breath(&c));
 }
 
 /// A window smaller than the layout shows the whole layout, zoomed out, whichever side is short.
@@ -558,14 +708,14 @@ fn the_key_transposes_like_a_sampler() {
     assert_eq!(bend(&c), 1.0, "C4 speaks at the natural pitch");
     run(&mut c, &shared, &[(0, on(72))], 256, |_| 256);
     assert!((bend(&c) - 2.0).abs() < 1e-9, "an octave up: {}", bend(&c));
-    run(&mut c, &shared, &[(0, Event::Bend(0.75))], 256, |_| 256);
+    run(&mut c, &shared, &[(0, Event::Bend { channel: 0, value: 0.75 })], 256, |_| 256);
     assert!((bend(&c) - 2.0 * 2f64.powf(2.0 / 24.0 * 2.0 / 2.0)).abs() < 1e-3, "the wheel moves it further: {}", bend(&c));
     // far keys stay within two octaves, and the voice stays well behaved there
     for midi in [0, 127] {
         let out = run(&mut c, &shared, &[(0, on(midi))], (FS * 0.6) as usize, |_| 256);
         assert!(out.iter().all(|x| x.is_finite() && x.abs() < 4.0), "key {midi} peaks at {}", peak(&out));
     }
-    run(&mut c, &shared, &[(0, Event::Bend(0.5))], 256, |_| 256);
+    run(&mut c, &shared, &[(0, Event::Bend { channel: 0, value: 0.5 })], 256, |_| 256);
     assert!((bend(&c) - 4.0).abs() < 1e-9, "at most two octaves: {}", bend(&c));
 }
 

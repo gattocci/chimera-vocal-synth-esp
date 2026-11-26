@@ -5,8 +5,28 @@ own head (`src/ui/render/anatomy3d.ts`) drawn live on a posable low-poly body, i
 the voice does. It's a small library, not an animation tool: there's no timeline and no renderer
 of its own. You pose it, skin it and draw it in your own three.js scene, frame by frame.
 
-Try it: `bun run dev`, then `/rig.html` (pick a pose, open the mouth, pick how the head is drawn,
-or play a motion file from another tool).
+## Rig playground
+
+Run `bun run dev` and open `/rig.html`. Add figures with **+** and select them with their chips or
+by clicking a figure. Drag the canvas to orbit. Choose a voice, pitch, size, wireframe or nerve
+look, mouth opening and pose for each figure. Type in the chat bar and press **Enter** to speak.
+Spoken words appear at the speaker's lips and fly away, even with the controls hidden.
+**↑** in the empty bar recalls the last line. The selected figure speaks at its pitch, turning
+toward the camera over its pose or motion before returning to it and to the mouth slider. Open
+the joint groups on the right to adjust the pose. **Mirror** copies arm and leg edits to the other
+side and **copy pose** copies the selected figure's joint angles as code for `pose()`.
+
+A motion file loops on its figure. Editing that figure's pose, size, mouth or voice stops the clip.
+The body, front and back views frame the stage. The torso, head, face and side views frame the
+selected figure. The stage, orbit camera and pulse controls are saved in browser storage where
+available. Motion files stay in the current session. **Clear stage** resets the scene. Press **H**
+to hide or show the controls, or open `/rig.html?shot` to start with them hidden. **Enter** or
+**/** focuses chat, showing only the bar if the controls are hidden. Sending a line hides it
+again in recording mode. **Escape** leaves the field.
+
+The playground uses one bloom pass. The nerve glow uses the strongest nerve look and dims by the
+largest close-up amount so a nearby face stays legible. Mixed stages keep the wireframe threshold
+and radius and average the wireframe strength with the nerve glow.
 
 ## Files
 
@@ -18,7 +38,8 @@ or play a motion file from another tool).
 | `src/rig/motion.ts` | `Motion`: a clip from another tool (Mixamo's FBX, BVH, glTF) carried over onto the rig |
 | `src/rig/view.ts` | the wireframe in CHIMERA's blue (and heat and weights views for finding faults) |
 | `src/rig/body.rig.bin` | the mesh, skeleton and weights (generated: `bun tools/rig/gen-body.ts`, never edited) |
-| `src/rig/demo.ts`, `rig.html` | the dev page (not in the app's build) |
+| `src/rig/playground.ts`, `rig.html` | the dev playground (not in the app's build) |
+| `src/rig/nerves.ts` | the nerve x-ray: the body's nervous system as round lines, the head drawn to go with it |
 
 ## Use
 
@@ -69,7 +90,8 @@ motion.pose(seconds);                                 // loops; motion.duration,
 (`VoiceModel.articFromArray(msg.t.artic)`), or a recording replayed with `TeleTrack`
 (`chimera render notes … --tele voice.tele`, `src/show/tele.ts`). Without a voice, pass an
 articulation of your own (`REST_ARTIC` from `src/ui/render/anatomy3d.ts` is the mouth closed)
-and `null`. A different body (a child's voice, say) is a new rig and a new head: the head's skin
+and `null`. Set the mounted head's `head.head.gazeAtCamera` to aim its eyes at the camera.
+A different body (a child's voice, say) is a new rig and a new head: the head's skin
 is fitted to the model once.
 
 ## How it works
@@ -151,6 +173,67 @@ rest joint `rig.H[i]`, and after `pose` its turn from rest `rig.S[i]` and joint 
   back to within 0.1 cm and the hands to 0.5°, the hips' height, a skeleton without toes, a
   one-frame clip, seeking, and the source moved by its parent.
 - `/rig.html`: look at it. A metric isn't the picture.
+
+## The nerve x-ray
+
+Another way to show the body, for videos: no skin and no grid, only a nervous system in red,
+purple and blue, and the head's recognisable parts (the eyes, nose and lips, and the vocal tract
+inside). Try the **by function**, **x-ray by depth** and **signal** looks in the playground.
+
+```ts
+import { Nerves, NerveView } from "./src/rig/nerves.ts";   // after initChimera, as the head
+const head = wearHead(rig, model);                         // no RigView: the skin isn't drawn
+const nerves = new Nerves(rig, head);                      // a second or three; leaves the rig at its neutral pose
+const view = new NerveView(nerves);                        // it sets how the head is drawn
+scene.add(view.mesh, head.mount);                          // under the same parent
+
+// every frame
+rig.pose(p);                                               // if it moves (a motion: motion.pose(t))
+view.update(camera, artic, tele, dt, canvasHeightCss);     // in place of head.update: it calls it
+view.pose();                                               // if the rig moved: the nerves where the bones are now
+head.resize(w, h);                                         // on resize
+view.resize(w, h, renderer.getPixelRatio());
+```
+
+`view.look` is `"function"` (solid: motor nerves red, sensory blue, mixed purple),
+`"xray"` (seen through, near red to far blue) or `"signal"` (red at the brain to blue at the
+fingers and toes, pulses running out); `view.signal` (0–1) is how much of the pulses the first
+two show, `view.speed` how fast they run (cm/s). The page's bloom is part of the look: it
+weakens as `view.close` (0 to 1) says the camera has come close to the face.
+
+- **What's there:** the brain's folds (contours of a smooth noise field over the head's brain
+  outline), the cerebellum, brainstem, spinal cord and cauda equina; the spinal nerves at each
+  level, the brachial, lumbar and sacral plexuses and the limbs' named nerves; the intercostals;
+  the sympathetic chains; the vagus with its recurrent laryngeal loops; the cranial nerves to the
+  eyes, nose, face and tongue; and twigs forking out to just under the skin, which is what draws
+  the body's outline once the skin is gone. Laid out to read as a nervous system, not as anatomy
+  to rely on.
+- **Built on the body:** in the neutral pose, by casting rays from the bones out to the skin (a
+  nerve at so many degrees round a limb and so far out to its skin), from the joints, and in the
+  head's own frame for the head.
+- **Moving:** each point is bound to the bones of the skin nearest it, of its own part of the
+  body only (a hanging hand's nerves once took the weights of the thigh beside them). Weights
+  are smoothed along a nerve, a plexus's run into a limb goes over from the trunk's to the
+  limb's, and where nerves meet they share one binding. A twig hangs off its nerve where it
+  leaves it (the piece and how far along it), turned as the nerve's bones turn there. Above the
+  jaw's line, the head carries them. All of it is in the rig's frame: the mesh and the head's
+  mount go under the same parent.
+- **Drawn as lines:** each piece a strip facing the camera, as wide as the nerve in cm (never
+  under about a px), shaded across as if round, its joints cut square (rounded where it's seen
+  end-on), its depth the round surface's.
+- **The head:** its own brain, skull section, cervical spine and ears are left out
+  (`HeadDrawing.parts`); the eyes, nose and lips are drawn wider, in their own colours, with the
+  nose's ridge (`parts.pop`), the nerves cleared away behind them while the face is towards the
+  camera. Its lines are px wide whatever the head's size: far off they're softer and thinner (or
+  they'd pile up and bloom to white), and close up the nerves (cm wide, so widening on screen)
+  are dimmer, so the face isn't washed out either way.
+- **Not yet:** the face's nerves don't follow the jaw. A pose is redrawn in 8 to 22 ms here
+  (about 20,000 pieces), on the CPU: fine for stills and for a motion clip drawn frame by frame,
+  heavy for one played live.
+
+`bun test tests/rig.test.ts` poses every preset and checks no nerve is pulled more than 2.5
+times (and 6 cm) longer than it was built, that nerves stay joined where they meet and twigs on
+their nerves, and that a parent's transform moves it all once.
 
 ## Provenance
 

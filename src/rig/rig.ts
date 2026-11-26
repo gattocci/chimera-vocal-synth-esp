@@ -90,6 +90,15 @@ const SPINE_SHARE = { flex: [0.32, 0.28, 0.22, 0.18], bend: [0.25, 0.25, 0.25, 0
 const NECK = ["neck", "head"];
 const NECK_SHARE = { flex: [0.6, 0.4], bend: [0.65, 0.35], twist: [0.45, 0.55] };
 
+function jointTurn(share: typeof NECK_SHARE, j: number, a: Pose["neck"]): THREE.Quaternion {
+  return rot(Y, share.twist[j] * a.twist).multiply(rot(Z, -share.flex[j] * a.flex)).multiply(rot(X, share.bend[j] * a.bend));
+}
+
+/** Local turns at the base of the neck and at the head, lowest first. */
+export function neckTurns(a: Pose["neck"]): [THREE.Quaternion, THREE.Quaternion] {
+  return [jointTurn(NECK_SHARE, 0, a), jointTurn(NECK_SHARE, 1, a)];
+}
+
 export class Rig {
   readonly header: Header;
   n: number;
@@ -288,10 +297,9 @@ export class Rig {
     // thighs are measured from the trunk, so they stay where theirs do.
     this.roll = (S.pelvis * (pelvicRoll(p.legs.R.flex) + pelvicRoll(p.legs.L.flex))) / 2;
     set("hips", rot(Y, p.body.turn).multiply(rot(Z, -p.body.tip)).multiply(rot(X, p.body.lean)).multiply(rot(Z, this.roll)));
-    const bendy = (names: string[], share: { flex: number[]; bend: number[]; twist: number[] }, a: { flex: number; bend: number; twist: number }) =>
-      names.forEach((name, j) => set(name, rot(Y, share.twist[j] * a.twist).multiply(rot(Z, -share.flex[j] * a.flex)).multiply(rot(X, share.bend[j] * a.bend))));
-    bendy(SPINE, SPINE_SHARE, p.spine);
-    bendy(NECK, NECK_SHARE, p.neck);
+    SPINE.forEach((name, j) => set(name, jointTurn(SPINE_SHARE, j, p.spine)));
+    const neck = neckTurns(p.neck);
+    NECK.forEach((name, j) => set(name, neck[j]));
     L[this.bone("spine1")].premultiply(rot(Z, -0.55 * this.roll));
     L[this.bone("spine2")].premultiply(rot(Z, -0.45 * this.roll));
     for (const side of ["R", "L"] as const) {

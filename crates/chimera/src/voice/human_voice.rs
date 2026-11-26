@@ -382,8 +382,12 @@ impl HumanVoice {
         // the pulse's peak area is the vibrating fold's length by how far its edge swings
         let body = self.airway.body;
         g.amplitude = 0.17 * body.fold_length * body.scale * (if s.voiced { 1.0 } else { 0.0 });
-        g.abduction = (if s.voiced { 0.1 * s.breathiness * s.breathiness } else { 0.2 + 0.1 * s.breathiness }) * k2;
-        self.base_abduction = g.abduction;
+        // A source change in the middle of a scored note keeps what the score has put on the
+        // abduction, the vibrato and the effort (the control step sets them again): dropping them
+        // until that step made a stream of changes (aftertouch) crackle.
+        let scored = g.abduction - self.base_abduction;
+        self.base_abduction = (if s.voiced { 0.1 * s.breathiness * s.breathiness } else { 0.2 + 0.1 * s.breathiness }) * k2;
+        g.abduction = self.base_abduction + scored;
         self.base_closure = 0.0;
         // Most voices, women's and trained singers' included, leave a small posterior gap between
         // the arytenoids through the closed phase (Södersten & Lindestad 1990). It leaks a little
@@ -409,10 +413,14 @@ impl HumanVoice {
         g.jitter = 0.0021 + 0.0245 * s.roughness;
         g.shimmer = 0.02 + 0.22 * s.roughness;
         g.diplophonia = if s.roughness > 0.5 { (s.roughness - 0.5) * 1.4 } else { 0.0 };
-        g.vibrato_depth = s.vibrato_depth;
         g.vibrato_rate = s.vibrato_rate;
         g.drift = s.drift;
-        g.effort = effort_at(s.pressure);
+        // while a score runs, the control step sets these: the score's vibrato, and the effort from
+        // the breath the gate lets through
+        if self.score.size() == 0 {
+            g.vibrato_depth = s.vibrato_depth;
+            g.effort = effort_at(s.pressure);
+        }
     }
 
     /// Render `out.len()` output samples.

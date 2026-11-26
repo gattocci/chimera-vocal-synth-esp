@@ -23,7 +23,7 @@ mod editor;
 pub mod http;
 pub mod speech;
 
-use self::core::{Core, Event, MIN_SAMPLE_RATE, Prepared, Settings, Shared, Transport, VoiceParams};
+use self::core::{BREATH_MAX, Core, Event, MIN_SAMPLE_RATE, Prepared, Settings, Shared, Transport, VoiceParams};
 
 /// The pronouncing dictionary, parsed once (off the audio thread).
 pub fn g2p() -> &'static EnglishG2P {
@@ -88,6 +88,9 @@ pub struct ChimeraParams {
     /// transport start or a loop puts the lyrics back at the start syllable
     #[id = "restart"]
     pub restart: BoolParam,
+    /// MIDI channels 1–15 are MPE note channels (lower zone)
+    #[id = "mpe"]
+    pub mpe: BoolParam,
     #[persist = "settings"]
     pub settings: RwLock<Settings>,
     /// the editor window's size (points)
@@ -106,7 +109,7 @@ impl Default for ChimeraParams {
             gain: FloatParam::new("Gain", 0.0, FloatRange::Linear { min: -30.0, max: 12.0 }).with_smoother(SmoothingStyle::Linear(20.0)).with_step_size(0.1).with_unit(" dB"),
             vibrato: FloatParam::new("Vibrato", 35.0, FloatRange::Linear { min: 0.0, max: 120.0 }).with_step_size(1.0).with_unit(" ct"),
             vibrato_rate: FloatParam::new("Vibrato Rate", s.vibrato_rate as f32, FloatRange::Linear { min: 3.5, max: 7.5 }).with_step_size(0.1).with_unit(" Hz"),
-            breath: FloatParam::new("Breath", s.pressure as f32, FloatRange::Linear { min: 2.0, max: 22.0 }).with_step_size(0.1).with_unit(" cmH2O"),
+            breath: FloatParam::new("Breath", s.pressure as f32, FloatRange::Linear { min: 2.0, max: BREATH_MAX }).with_step_size(0.1).with_unit(" cmH2O"),
             pressed: percent("Pressed", s.tension),
             bright: percent("Bright", s.brightness),
             breathy: percent("Breathy", s.breathiness),
@@ -115,6 +118,7 @@ impl Default for ChimeraParams {
             glide: FloatParam::new("Glide", s.glide as f32, FloatRange::Skewed { min: 0.005, max: 0.6, factor: FloatRange::skew_factor(-2.0) }).with_unit(" ms").with_value_to_string(Arc::new(|v| format!("{:.0}", v * 1000.0))).with_string_to_value(Arc::new(|t| t.trim().trim_end_matches("ms").trim().parse::<f32>().ok().map(|v| v / 1000.0))),
             ring: percent("Ring", 0.0),
             restart: BoolParam::new("Restart Lyrics On Play", true),
+            mpe: BoolParam::new("MPE", true),
             settings: RwLock::new(Settings::default()),
             window: RwLock::new(bridge::WINDOW_DEFAULT),
         }
@@ -135,6 +139,7 @@ impl ChimeraParams {
             glide: self.glide.value(),
             ring: self.ring.value(),
             restart: self.restart.value(),
+            mpe: self.mpe.value(),
         }
     }
 }
@@ -156,10 +161,13 @@ impl Default for Chimera {
 /// A host note event as the core sees it.
 fn core_event(ev: &NoteEvent<()>) -> Option<Event> {
     Some(match *ev {
-        NoteEvent::NoteOn { note, velocity, .. } => Event::NoteOn { midi: note, velocity: (velocity * 127.0) as f64 },
+        NoteEvent::NoteOn { note, velocity, channel, .. } => Event::NoteOn { midi: note, velocity: (velocity * 127.0) as f64, channel },
         NoteEvent::NoteOff { note, .. } => Event::NoteOff { midi: note },
         NoteEvent::Choke { .. } | NoteEvent::MidiCC { cc: 120 | 123, .. } => Event::AllOff,
-        NoteEvent::MidiPitchBend { value, .. } => Event::Bend(value),
+        NoteEvent::MidiPitchBend { channel, value, .. } => Event::Bend { channel, value },
+        NoteEvent::MidiChannelPressure { channel, pressure, .. } => Event::Pressure { channel, value: pressure },
+        NoteEvent::PolyPressure { note, pressure, .. } => Event::KeyPressure { midi: note, value: pressure },
+        NoteEvent::MidiCC { channel, cc: 74, value, .. } => Event::Slide { channel, value },
         _ => return None,
     })
 }

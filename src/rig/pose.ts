@@ -113,6 +113,30 @@ export function pose(p: DeepPartial<Pose> & { bothArms?: Partial<Arm>; bothLegs?
   return n;
 }
 
+/** Copyable TypeScript for a pose, with the neutral joints left out. */
+export function serializePose(p: Pose): string {
+  const n = neutral();
+  const changes = <T extends object>(part: T, base: T) =>
+    Object.fromEntries((Object.keys(base) as (keyof T)[])
+      .filter((joint) => part[joint] !== base[joint])
+      .map((joint) => [joint, part[joint]] as const));
+  const code: Record<string, unknown> = {};
+  for (const name of ["body", "spine", "neck"] as const) {
+    const part = changes(p[name], n[name]);
+    if (Object.keys(part).length) code[name] = part;
+  }
+  for (const [name, both] of [["arms", "bothArms"], ["legs", "bothLegs"]] as const) {
+    const R = changes(p[name].R, n[name].R), L = changes(p[name].L, n[name].L);
+    const right = JSON.stringify(R), left = JSON.stringify(L);
+    if (right === left) {
+      if (right !== "{}") code[both] = R;
+    } else {
+      code[name] = { ...(right === "{}" ? {} : { R }), ...(left === "{}" ? {} : { L }) };
+    }
+  }
+  return `pose(${JSON.stringify(code).replace(/"([a-zA-Z]+)":/g, "$1: ").replace(/,/g, ", ")})`;
+}
+
 /** poses that test the rig: each joint near its limits, and whole-body poses that combine them */
 export const PRESETS: Record<string, Pose> = {
   neutral: neutral(),

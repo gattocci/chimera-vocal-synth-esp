@@ -110,6 +110,8 @@ export interface RigHead {
   readonly look: HeadLook;
   /** draw the head another way (the grid's brightness is the rig's tone: call view.toneChanged() after) */
   setLook(look: HeadLook): void;
+  /** only the eyes, nose and lips brighter or dimmer (the look's `features`), the rest of the drawing as it is */
+  setFeatures(features: number): void;
   /** Place and draw the head for this frame, after rig.pose: the voice's articulation now, its
    *  telemetry (the live worklet's message, or a TeleTrack's; null: none), seconds since the last. */
   update(camera: THREE.Camera, a: HumanArtic, tele: TelemetryMessage | null, dt: number): void;
@@ -483,6 +485,9 @@ export function wearHead(rig: Rig, model: VoiceModel, opts: { look?: Partial<Hea
       look = { ...l };
       drawAs(look);
       skinAs(look.skin);
+    },
+    setFeatures(features: number) {
+      look = { ...look, features };
     },
     resize(w: number, h: number) {
       head.resize(w, h);

@@ -459,6 +459,13 @@ fn a_voiced_wa_row_kana_reads_alike_however_it_is_typed() {
     }
     // the hiragana and the spacing mark ゛ too, and the text keeps what was typed
     assert_eq!(sung("わ゛"), "va");
+    // and an iteration mark that voices: わゞ is わ then ヷ, as わゝ + U+3099 is (follow-up to #148:
+    // it sang wa.wa); ヲヾ likewise, and a plain ゝ only repeats
+    assert_eq!(sung("わゞ"), "wa.va");
+    assert_eq!(sung("わゞ"), sung("わゝ\u{3099}"));
+    assert_eq!(sung("ヲヾ"), "o.vo");
+    assert_eq!(sung("わゝ"), "wa.wa");
+    assert_eq!(shown("わゞ"), ["わ", "ゞ"]);
     assert_eq!(shown("ﾜﾞｲﾝ"), ["ﾜﾞ", "ｲ", "ﾝ"]);
 }
 

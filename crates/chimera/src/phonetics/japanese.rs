@@ -120,8 +120,16 @@ fn normalise(word: &str) -> Vec<Kana> {
             }
             '\u{309D}' | '\u{30FD}' | '\u{309E}' | '\u{30FE}' => {
                 if let Some(prev) = out.last().map(|k| k.0).filter(|&c| base(c).is_some()) {
-                    let c = if matches!(ch, '\u{309E}' | '\u{30FE}') { voiced(prev).unwrap_or(prev) } else { prev };
-                    out.push((c, ch.to_string()));
+                    let voicing = matches!(ch, '\u{309E}' | '\u{30FE}');
+                    match (voicing, voiced(prev), voiced_w(prev)) {
+                        // わゞ is わ then ヷ, as わゝ + U+3099 is (review of #148: it sang wa.wa)
+                        (true, None, Some(vowel)) => {
+                            out.push(('ゔ', ch.to_string()));
+                            out.push((vowel, String::new()));
+                        }
+                        (true, Some(v), _) => out.push((v, ch.to_string())),
+                        _ => out.push((prev, ch.to_string())),
+                    }
                 }
             }
             // ヷ ヸ ヹ ヺ: v + a small vowel, the reading of わ ゐ ゑ を with a voicing mark

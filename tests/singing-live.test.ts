@@ -220,8 +220,10 @@ describe("Sing mode, live keys", () => {
 
   test("every demo song can be chosen and sings its own words a syllable to a note; the player's words come back with a mood", async () => {
     // #87's tunes menu left out the contributed demo songs ("Ночной ветер", Daisy Bell)
-    const { DEMO_SONGS } = await import("../src/wasm/engine.ts");
+    const { DEMO_SONGS, MandarinLexicon } = await import("../src/wasm/engine.ts");
     const { TUNES } = await import("../src/song/tunes.ts");
+    // 送别 is in Han characters, read with the lexicon the page fetches (/data/mandarin.txt.gz)
+    await new MandarinLexicon().load(new URL("../public/data/mandarin.txt.gz", import.meta.url).href);
     const melodies = TUNES.map((t) => JSON.stringify(t.phrases.flat()));
     for (const d of DEMO_SONGS) expect(melodies).toContain(JSON.stringify(d.notes.map(([m, b]) => [m, b])));
     const songs = TUNES.filter((t) => t.lyrics !== undefined);
