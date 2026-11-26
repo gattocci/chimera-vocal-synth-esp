@@ -62,6 +62,12 @@ pub fn zh() -> Result<MandarinLexicon, String> {
     Ok(l)
 }
 
+/// Lyrics → syllables through every built-in front end, Latin script read as `lang` (the Mandarin
+/// lexicon only when needed).
+pub fn sung_lyrics(text: &str, lang: Lang) -> Result<Vec<Syllable>, String> {
+    sung_lyrics_dialect(text, lang, None)
+}
+
 /// Lyrics with an optional Spanish dialect preset (ignored by the other front ends).
 pub fn sung_lyrics_dialect(text: &str, lang: Lang, dialect: Option<Dialect>) -> Result<Vec<Syllable>, String> {
     let lex = if text.chars().any(is_han) { zh()? } else { MandarinLexicon::new() };
