@@ -355,3 +355,11 @@ fn sung_words_keep_their_allophones() {
     let final_s = lyrics_es("país", &rio);
     assert_eq!(final_s[1].coda.iter().map(|c| c.ipa.as_str()).collect::<Vec<_>>(), vec!["s"]);
 }
+
+#[test]
+fn latest_listening_report_words_keep_their_phones() {
+    let g = g2p();
+    assert_eq!(say(&g, "Córdoba"), "kˈoɾðoβa");
+    assert_eq!(say(&g, "higuera"), "iɣˈeɾa");
+    assert_eq!(say(&g, "definía"), "definˈia");
+}

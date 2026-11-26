@@ -51,8 +51,11 @@ declined can't claim a piece of it: `café` stays English's "caf" rather than "c
 "é". Characters no front end claims are skipped, as on main: `Zürich` sings "Z rich". Nothing after
 them is lost.
 
-`chimera syllables "<lyrics>" [en|tr]` prints what the front ends read, one JSON syllable per sung
-note: the quickest way to check a front end.
+`chimera syllables "<lyrics>" [en|tr|es] [--dialect neutro|rioplatense|castellano]` prints what
+the front ends read, one JSON syllable per sung note: the quickest way to check a front end.
+`chimera render spanish <out> ["Texto español."] [body] [--dialect ...]` renders Spanish text
+without patching the source. A melody JSON can select the same route with `"lang": "es"` and
+`"dialect": "neutro|rioplatense|castellano"`.
 
 ## Spanish
 
